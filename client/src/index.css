@@ -1,0 +1,201 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+}
+
+@layer components {
+  /* Button styles */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 font-medium rounded-xl transition-all duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-primary-500 text-dark-300 hover:bg-primary-600 active:bg-primary-700;
+    box-shadow: 0 1px 2px 0 rgba(255, 193, 7, 0.25);
+  }
+
+  .btn-secondary {
+    @apply bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 hover:border-gray-300;
+  }
+
+  .btn-dark {
+    @apply bg-dark-300 text-white hover:bg-dark-200 active:bg-dark-100;
+  }
+
+  /* Card styles */
+  .card {
+    @apply bg-white rounded-2xl border border-gray-100;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  }
+
+  .card-hover {
+    @apply transition-all duration-200;
+  }
+
+  .card-hover:hover {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    @apply border-gray-200;
+  }
+
+  /* Sidebar styles */
+  .sidebar {
+    @apply bg-dark-300 text-white;
+    box-shadow: 4px 0 6px -1px rgba(0, 0, 0, 0.1);
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 transition-all duration-200;
+  }
+
+  .sidebar-item:hover {
+    @apply bg-dark-200 text-white;
+  }
+
+  .sidebar-item.active {
+    @apply bg-primary-500/10 text-primary-500 font-medium;
+    box-shadow: inset 3px 0 0 0 #FFC107;
+  }
+
+  .sidebar-item.active:hover {
+    @apply bg-primary-500/20;
+  }
+
+  /* Input styles */
+  .input {
+    @apply block w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400;
+    @apply focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500;
+    @apply transition-all duration-200;
+  }
+
+  .input-dark {
+    @apply bg-dark-300 border-dark-200 text-white placeholder-gray-500;
+    @apply focus:ring-primary-500/30 focus:border-primary-500;
+  }
+
+  /* Progress bar */
+  .progress-bar {
+    @apply h-2 bg-gray-100 rounded-full overflow-hidden;
+  }
+
+  .progress-fill {
+    @apply h-full rounded-full transition-all duration-500 ease-out;
+    background: linear-gradient(90deg, #FFC107 0%, #FFD54F 100%);
+  }
+
+  /* Badge styles */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium;
+  }
+
+  .badge-primary {
+    @apply bg-primary-100 text-primary-700;
+  }
+
+  .badge-success {
+    @apply bg-green-100 text-green-700;
+  }
+
+  .badge-warning {
+    @apply bg-yellow-100 text-yellow-700;
+  }
+
+  .badge-danger {
+    @apply bg-red-100 text-red-700;
+  }
+
+  .badge-dark {
+    @apply bg-dark-100 text-gray-300;
+  }
+
+  /* Stat card */
+  .stat-card {
+    @apply relative overflow-hidden bg-white rounded-2xl p-6 border border-gray-100;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 120px;
+    height: 120px;
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.05) 0%, transparent 70%);
+    border-radius: 0 16px 0 0;
+  }
+
+  /* Chart container */
+  .chart-container {
+    @apply bg-white rounded-2xl p-6 border border-gray-100;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  }
+
+  /* Notification dot */
+  .notification-dot {
+    @apply absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary-500 rounded-full border-2 border-white;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full hover:bg-gray-400;
+}
+
+/* Dark sidebar scrollbar */
+.dark-sidebar::-webkit-scrollbar-track {
+  @apply bg-dark-200;
+}
+
+.dark-sidebar::-webkit-scrollbar-thumb {
+  @apply bg-dark-100 rounded-full hover:bg-gray-600;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-slideIn {
+  animation: slideIn 0.2s ease-out forwards;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #FFC107 0%, #FF8F00 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Yellow glow effect */
+.yellow-glow {
+  box-shadow: 0 0 20px rgba(255, 193, 7, 0.3);
+}
