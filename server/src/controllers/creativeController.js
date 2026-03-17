@@ -3,6 +3,7 @@ const Project = require('../models/Project');
 const Task = require('../models/Task');
 const { completeStage, getStageStatus } = require('../middleware/stageGating');
 const { hasProjectAccess } = require('../utils/auth');
+const { generateTasksFromStrategy } = require('../services/taskGenerationService');
 
 const checkProjectAccess = async (projectId, user) => {
   const project = await Project.findById(projectId)
@@ -116,6 +117,26 @@ exports.upsertCreativeStrategy = async (req, res, next) => {
       isCompleted
     } = req.body;
 
+    // Debug log incoming creative plan data
+    console.log('\n=== INCOMING CREATIVE PLAN DATA ===');
+    if (creativePlan && creativePlan.length > 0) {
+      creativePlan.forEach((item, idx) => {
+        console.log(`Item ${idx + 1}:`, {
+          name: item.name,
+          creativeType: item.creativeType,
+          subType: item.subType,
+          objective: item.objective,
+          assignedRole: item.assignedRole,
+          assignedTeamMembers: item.assignedTeamMembers,
+          platforms: item.platforms,
+          screenSizes: item.screenSizes,
+          notes: item.notes?.substring(0, 50) + '...'
+        });
+      });
+    } else {
+      console.log('No creative plan items received');
+    }
+
     const creativeData = {
       projectId,
       stages: stages || [
@@ -150,11 +171,72 @@ exports.upsertCreativeStrategy = async (req, res, next) => {
     creativeStrategy.calculateTotal();
     await creativeStrategy.save();
 
-    console.log('Saved creative strategy:', JSON.stringify(creativeStrategy.toObject(), null, 2));
+    console.log('Saved creative strategy creativePlan items:', creativeStrategy.creativePlan?.map(item => ({
+      name: item.name,
+      creativeType: item.creativeType,
+      subType: item.subType,
+      assignedRole: item.assignedRole,
+      assignedTeamMembers: item.assignedTeamMembers,
+      platforms: item.platforms,
+      screenSizes: item.screenSizes
+    })));
 
-    // If completed, update project stage
-    if (isCompleted && !project.stages.creativeStrategy.isCompleted) {
-      await completeStage(projectId, 'creativeStrategy', req.user._id);
+    // If completed, update project stage and generate tasks
+    if (isCompleted) {
+      // Update stage completion
+      if (!project.stages.creativeStrategy.isCompleted) {
+        await completeStage(projectId, 'creativeStrategy', req.user._id);
+      }
+
+      // Generate tasks from creative strategy
+      // This will check for existing tasks and only create new ones
+      try {
+        console.log('\n========================================');
+        console.log('=== GENERATING TASKS FROM CREATIVE STRATEGY ===');
+        console.log('========================================');
+        console.log('Project ID:', projectId);
+        console.log('Business Name:', project.businessName);
+
+        // Log project team assignments
+        console.log('\n=== Project Team Assignments ===');
+        console.log('contentWriters:', project.assignedTeam?.contentWriters?.map(m => ({ _id: m?._id, name: m?.name })) || 'none');
+        console.log('graphicDesigners:', project.assignedTeam?.graphicDesigners?.map(m => ({ _id: m?._id, name: m?.name })) || 'none');
+        console.log('videoEditors:', project.assignedTeam?.videoEditors?.map(m => ({ _id: m?._id, name: m?.name })) || 'none');
+        // Legacy fields
+        console.log('contentWriter (legacy):', project.assignedTeam?.contentWriter?._id || 'none');
+        console.log('graphicDesigner (legacy):', project.assignedTeam?.graphicDesigner?._id || 'none');
+        console.log('videoEditor (legacy):', project.assignedTeam?.videoEditor?._id || 'none');
+
+        // Log creative plan items
+        console.log('\n=== Creative Plan Items ===');
+        const savedCreativePlan = creativeStrategy.creativePlan || [];
+        savedCreativePlan.forEach((item, idx) => {
+          console.log(`Item ${idx + 1}:`, {
+            name: item.name,
+            creativeType: item.creativeType,
+            subType: item.subType,
+            objective: item.objective,
+            assignedRole: item.assignedRole,
+            assignedTeamMembers: item.assignedTeamMembers,
+            platforms: item.platforms,
+            screenSizes: item.screenSizes
+          });
+        });
+
+        const generatedTasks = await generateTasksFromStrategy(
+          projectId,
+          creativeStrategy.toObject(),
+          req.user._id
+        );
+        console.log(`\n=== TASK GENERATION COMPLETE ===`);
+        console.log(`Generated ${generatedTasks?.length || 0} tasks for project ${projectId}`);
+        console.log('========================================\n');
+      } catch (taskError) {
+        console.error('Error generating tasks:', taskError);
+        console.error('Task error stack:', taskError.stack);
+        // Don't fail the request if task generation fails
+        // The strategy is still saved successfully
+      }
     }
 
     // Get updated project

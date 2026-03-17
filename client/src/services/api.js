@@ -173,6 +173,8 @@ export const taskService = {
   getMyTasks: (params) => api.get('/tasks/my-tasks', { params }),
   // Get tasks for current user by their role
   getMyRoleTasks: (params) => api.get('/tasks/my-role-tasks', { params }),
+  // Get creative tasks from CreativeStrategy for current user
+  getMyCreativeTasks: (params) => api.get('/tasks/my-creative-tasks', { params }),
   // Get all tasks (admin/PM)
   getAllTasks: (params) => api.get('/tasks', { params }),
   // Get tasks for a project

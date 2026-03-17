@@ -48,7 +48,16 @@ const ASSET_TYPES = [
   'reel',
   'static_ad',
   'landing_page_design',
-  'landing_page_page'
+  'landing_page_page',
+  // Content task variants
+  'image_creative_content',
+  'video_creative_content',
+  'carousel_creative_content',
+  'reel_content',
+  'ugc_content',
+  'testimonial_content',
+  'demo_video',
+  'offer_creative'
 ];
 
 // Role assignment mapping

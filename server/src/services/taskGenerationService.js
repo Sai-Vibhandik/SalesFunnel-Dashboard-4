@@ -35,8 +35,23 @@ const TASK_ASSET_MAPPING = {
  */
 async function generateTasksFromStrategy(projectId, creativeStrategy, completedBy) {
   try {
-    // Get project with team assignments
+    console.log('\n========================================');
+    console.log('=== TASK GENERATION STARTED ===');
+    console.log('========================================');
+    console.log(`Project ID: ${projectId}`);
+    console.log(`Completed by: ${completedBy}`);
+    console.log(`Creative Strategy ID: ${creativeStrategy?._id}`);
+
+    // Get project with team assignments - populate both new array fields and legacy fields
     const project = await Project.findById(projectId)
+      .populate('assignedTeam.performanceMarketers', 'name email')
+      .populate('assignedTeam.contentWriters', 'name email')
+      .populate('assignedTeam.uiUxDesigners', 'name email')
+      .populate('assignedTeam.graphicDesigners', 'name email')
+      .populate('assignedTeam.videoEditors', 'name email')
+      .populate('assignedTeam.developers', 'name email')
+      .populate('assignedTeam.testers', 'name email')
+      // Legacy fields for backward compatibility
       .populate('assignedTeam.performanceMarketer', 'name email')
       .populate('assignedTeam.contentCreator', 'name email')
       .populate('assignedTeam.contentWriter', 'name email')
@@ -47,8 +62,13 @@ async function generateTasksFromStrategy(projectId, creativeStrategy, completedB
       .populate('assignedTeam.tester', 'name email');
 
     if (!project) {
+      console.error('ERROR: Project not found');
       throw new Error('Project not found');
     }
+
+    console.log(`\n=== Project Info ===`);
+    console.log(`Business Name: ${project.businessName}`);
+    console.log(`Project Name: ${project.projectName}`);
 
     // Get strategy context from all stages
     // Landing pages are embedded in the Project document, not in a separate collection
@@ -73,19 +93,34 @@ async function generateTasksFromStrategy(projectId, creativeStrategy, completedB
     const adTypes = creativeStrategy?.adTypes || [];
     const creativePlan = creativeStrategy?.creativePlan || [];
 
-    console.log(`Generating tasks for project ${project.businessName}:`);
+    console.log(`\n=== Creative Strategy Data ===`);
     console.log(`- Ad types: ${adTypes.length}`);
     console.log(`- Creative plan items: ${creativePlan.length}`);
     console.log(`- Landing pages: ${landingPages.length}`);
-    console.log(`- Team assignments:`, {
-      contentCreator: project.assignedTeam?.contentCreator?._id || 'none',
-      contentWriter: project.assignedTeam?.contentWriter?._id || 'none',
-      graphicDesigner: project.assignedTeam?.graphicDesigner?._id || 'none',
-      videoEditor: project.assignedTeam?.videoEditor?._id || 'none',
-      uiUxDesigner: project.assignedTeam?.uiUxDesigner?._id || 'none',
-      developer: project.assignedTeam?.developer?._id || 'none',
-      tester: project.assignedTeam?.tester?._id || 'none'
-    });
+
+    if (creativePlan.length > 0) {
+      console.log(`\n=== Creative Plan Items ===`);
+      creativePlan.forEach((item, idx) => {
+        console.log(`Item ${idx + 1}:`, {
+          name: item.name,
+          creativeType: item.creativeType,
+          subType: item.subType,
+          objective: item.objective,
+          assignedRole: item.assignedRole,
+          assignedTeamMembers: item.assignedTeamMembers,
+          notes: item.notes
+        });
+      });
+    }
+
+    console.log(`\n=== Team Assignments ===`);
+    console.log(`contentWriters:`, project.assignedTeam?.contentWriters?.map(m => ({ _id: m?._id, name: m?.name })) || 'none');
+    console.log(`graphicDesigners:`, project.assignedTeam?.graphicDesigners?.map(m => ({ _id: m?._id, name: m?.name })) || 'none');
+    console.log(`videoEditors:`, project.assignedTeam?.videoEditors?.map(m => ({ _id: m?._id, name: m?.name })) || 'none');
+    // Legacy fields
+    console.log(`contentWriter (legacy):`, project.assignedTeam?.contentWriter?._id || 'none');
+    console.log(`graphicDesigner (legacy):`, project.assignedTeam?.graphicDesigner?._id || 'none');
+    console.log(`videoEditor (legacy):`, project.assignedTeam?.videoEditor?._id || 'none');
 
     // Generate tasks from legacy ad types
     for (const adType of adTypes) {
@@ -225,10 +260,40 @@ function generateAdTypeTasks(adType, projectId, creativeStrategyId, strategyCont
   const tasks = [];
   const creatives = adType.creatives || {};
 
+  // Helper function to get first team member for a role
+  const getFirstMember = (role) => {
+    const roleFieldMap = {
+      'content_writer': { arrayField: 'contentWriters', legacyField: 'contentWriter' },
+      'graphic_designer': { arrayField: 'graphicDesigners', legacyField: 'graphicDesigner' },
+      'video_editor': { arrayField: 'videoEditors', legacyField: 'videoEditor' },
+      'ui_ux_designer': { arrayField: 'uiUxDesigners', legacyField: 'uiUxDesigner' },
+      'developer': { arrayField: 'developers', legacyField: 'developer' },
+      'tester': { arrayField: 'testers', legacyField: 'tester' }
+    };
+
+    const fieldConfig = roleFieldMap[role];
+    if (!fieldConfig) return null;
+
+    // Check new array field first
+    const arrayMembers = project.assignedTeam?.[fieldConfig.arrayField];
+    if (arrayMembers && Array.isArray(arrayMembers) && arrayMembers.length > 0) {
+      return arrayMembers[0]._id || arrayMembers[0];
+    }
+
+    // Fall back to legacy field
+    const legacyMember = project.assignedTeam?.[fieldConfig.legacyField];
+    if (legacyMember) {
+      return legacyMember._id || legacyMember;
+    }
+
+    return null;
+  };
+
   // Get assigned team members
-  const contentWriter = project.assignedTeam.contentWriter?._id;
-  const graphicDesigner = project.assignedTeam.graphicDesigner?._id;
-  const tester = project.assignedTeam.tester?._id;
+  const contentWriter = getFirstMember('content_writer');
+  const graphicDesigner = getFirstMember('graphic_designer');
+  const videoEditor = getFirstMember('video_editor');
+  const tester = getFirstMember('tester');
 
   // Get platforms array
   const platforms = creatives.platforms || [];
@@ -343,7 +408,7 @@ function generateAdTypeTasks(adType, projectId, creativeStrategyId, strategyCont
         assetType: 'video_creative',
         taskTitle: `${adType.typeName} - Video Creative ${i + 1}`,
         assignedRole: 'video_editor',
-        assignedTo: project.assignedTeam.videoEditor?._id,
+        assignedTo: videoEditor,
         strategyContext,
         contextLink,
         contextPdfUrl,
@@ -439,8 +504,46 @@ function generateAdTypeTasks(adType, projectId, creativeStrategyId, strategyCont
 function generateLandingPageTasks(landingPage, projectId, creativeStrategyId, strategyContext, project, completedBy, contextLink, contextPdfUrl) {
   const tasks = [];
 
-  const uiuxDesigner = project.assignedTeam.uiUxDesigner?._id;
-  const developer = project.assignedTeam.developer?._id;
+  // Helper function to get first team member for a role (supports both array and legacy fields)
+  const getFirstMember = (role) => {
+    const roleFieldMap = {
+      'ui_ux_designer': { arrayField: 'uiUxDesigners', legacyField: 'uiUxDesigner' },
+      'developer': { arrayField: 'developers', legacyField: 'developer' }
+    };
+
+    const fieldConfig = roleFieldMap[role];
+    if (!fieldConfig) return null;
+
+    // Check new array field first
+    const arrayMembers = project.assignedTeam?.[fieldConfig.arrayField];
+    if (arrayMembers && Array.isArray(arrayMembers) && arrayMembers.length > 0) {
+      return arrayMembers[0]._id || arrayMembers[0];
+    }
+
+    // Fall back to legacy field
+    const legacyMember = project.assignedTeam?.[fieldConfig.legacyField];
+    if (legacyMember) {
+      return legacyMember._id || legacyMember;
+    }
+
+    return null;
+  };
+
+  // Use landing-page-specific assignments if available, otherwise fall back to project-level assignments
+  let uiuxDesigner = landingPage.assignedDesigner || null;
+  let developer = landingPage.assignedDeveloper || null;
+
+  // Fall back to project-level assignments if not set on landing page
+  if (!uiuxDesigner) {
+    uiuxDesigner = getFirstMember('ui_ux_designer');
+  }
+  if (!developer) {
+    developer = getFirstMember('developer');
+  }
+
+  console.log(`\n=== Landing Page: ${landingPage.name || 'Unnamed'} ===`);
+  console.log(`Assigned Designer: ${uiuxDesigner || 'Not assigned'}`);
+  console.log(`Assigned Developer: ${developer || 'Not assigned'}`);
 
   // Landing page design task (starts the workflow)
   // Status flow: design_pending → design_submitted → design_approved → development_pending → development_submitted → development_approved → final_approved
@@ -499,9 +602,46 @@ function generateLandingPageTasks(landingPage, projectId, creativeStrategyId, st
 function generateCreativePlanTasks(creativePlan, projectId, creativeStrategyId, strategyContext, project, completedBy, contextLink, contextPdfUrl) {
   const tasks = [];
 
-  const contentWriter = project.assignedTeam.contentWriter?._id;
-  const graphicDesigner = project.assignedTeam.graphicDesigner?._id;
-  const videoEditor = project.assignedTeam.videoEditor?._id;
+  // Helper function to get team member(s) for a role
+  // Supports both new array fields and legacy single fields
+  const getTeamMembersForRole = (role) => {
+    const roleFieldMap = {
+      'content_writer': { arrayField: 'contentWriters', legacyField: 'contentWriter' },
+      'graphic_designer': { arrayField: 'graphicDesigners', legacyField: 'graphicDesigner' },
+      'video_editor': { arrayField: 'videoEditors', legacyField: 'videoEditor' },
+      'ui_ux_designer': { arrayField: 'uiUxDesigners', legacyField: 'uiUxDesigner' },
+      'developer': { arrayField: 'developers', legacyField: 'developer' },
+      'tester': { arrayField: 'testers', legacyField: 'tester' }
+    };
+
+    const fieldConfig = roleFieldMap[role];
+    if (!fieldConfig) return null;
+
+    // Check new array field first (preferred)
+    const arrayMembers = project.assignedTeam?.[fieldConfig.arrayField];
+    if (arrayMembers && Array.isArray(arrayMembers) && arrayMembers.length > 0) {
+      return arrayMembers; // Return array of user objects
+    }
+
+    // Fall back to legacy field
+    const legacyMember = project.assignedTeam?.[fieldConfig.legacyField];
+    if (legacyMember) {
+      return [legacyMember]; // Return as array for consistency
+    }
+
+    return null;
+  };
+
+  // Get default team members from project assignment
+  const defaultContentWriters = getTeamMembersForRole('content_writer');
+  const defaultGraphicDesigners = getTeamMembersForRole('graphic_designer');
+  const defaultVideoEditors = getTeamMembersForRole('video_editor');
+
+  console.log('Team assignments for task generation:', {
+    contentWriters: defaultContentWriters?.map(m => m?._id || m),
+    graphicDesigners: defaultGraphicDesigners?.map(m => m?._id || m),
+    videoEditors: defaultVideoEditors?.map(m => m?._id || m)
+  });
 
   // Creative type to task type mapping - determines which design role receives the task
   const creativeTypeTaskMap = {
@@ -521,15 +661,17 @@ function generateCreativePlanTasks(creativePlan, projectId, creativeStrategyId, 
     'OFFER_SALES': { contentTask: 'content_creation', designTask: 'graphic_design', assetType: 'offer_creative', creativeOutputType: 'offer_creative' }
   };
 
-  // Role to assigned user mapping (default team members from project)
-  const roleToUserMap = {
-    'content_writer': contentWriter,
-    'graphic_designer': graphicDesigner,
-    'video_editor': videoEditor
-  };
-
   for (let i = 0; i < creativePlan.length; i++) {
     const planItem = creativePlan[i];
+
+    console.log(`\n=== Processing creative plan item ${i + 1} ===`);
+    console.log(`Name: ${planItem.name}`);
+    console.log(`Creative Type: ${planItem.creativeType}`);
+    console.log(`Sub Type: ${planItem.subType}`);
+    console.log(`Objective: ${planItem.objective}`);
+    console.log(`Assigned Role: ${planItem.assignedRole}`);
+    console.log(`Assigned Team Members (raw): ${JSON.stringify(planItem.assignedTeamMembers)}`);
+    console.log(`Notes: ${planItem.notes}`);
 
     // Determine creative type from new field or legacy category
     const creativeType = planItem.creativeType || planItem.category || 'IMAGE';
@@ -546,25 +688,84 @@ function generateCreativePlanTasks(creativePlan, projectId, creativeStrategyId, 
     // Build task title from name or subType
     const taskTitle = planItem.name || planItem.subType || planItem.adType || `Creative ${i + 1}`;
 
-    // Get assigned role and team members from plan item or use defaults
+    // Get assigned role and team members from the plan item
+    // These were set by the Performance Marketer using the Admin's assignment
     const assignedRole = planItem.assignedRole || (creativeType === 'VIDEO' ? 'video_editor' : 'graphic_designer');
-    const assignedTeamMembers = planItem.assignedTeamMembers || [];
 
-    // If assigned team members are specified, use the first one as primary assignee
-    // Otherwise fall back to project's default team member for that role
+    // Handle assignedTeamMembers - could be array of ObjectIds, strings, or populated user objects
+    let assignedTeamMemberIds = planItem.assignedTeamMembers || [];
+
+    // Normalize to array of string IDs
+    if (assignedTeamMemberIds && !Array.isArray(assignedTeamMemberIds)) {
+      assignedTeamMemberIds = [assignedTeamMemberIds];
+    }
+    assignedTeamMemberIds = assignedTeamMemberIds
+      .filter(id => id != null)
+      .map(id => {
+        // Handle ObjectId, string, or populated user object
+        if (typeof id === 'object' && id._id) {
+          return id._id.toString();
+        }
+        return id.toString ? id.toString() : String(id);
+      });
+
+    console.log(`Assigned Role: ${assignedRole}`);
+    console.log(`Assigned Team Member IDs (normalized): ${JSON.stringify(assignedTeamMemberIds)}`);
+
+    // Resolve team member IDs to actual user objects
+    // The assignedTeamMembers contains user IDs that were set from project.assignedTeam
     let designAssignedTo = null;
-    if (assignedTeamMembers.length > 0) {
-      designAssignedTo = assignedTeamMembers[0];
+    let contentAssignedTo = null;
+
+    // For design/edit task - use the assigned role's team members
+    if (assignedRole === 'content_writer') {
+      const roleMembers = getTeamMembersForRole('content_writer');
+      console.log(`Role members for content_writer:`, roleMembers?.map(m => m?._id || m));
+      if (assignedTeamMemberIds.length > 0) {
+        // Use the assigned team member IDs directly (they're already user IDs)
+        designAssignedTo = assignedTeamMemberIds[0];
+        console.log(`Using assignedTeamMember for content_writer: ${designAssignedTo}`);
+      } else if (roleMembers && roleMembers.length > 0) {
+        designAssignedTo = roleMembers[0]._id || roleMembers[0];
+        console.log(`Using default content_writer: ${designAssignedTo}`);
+      } else {
+        console.log(`No content_writer available for assignment`);
+      }
+    } else if (assignedRole === 'graphic_designer') {
+      const roleMembers = getTeamMembersForRole('graphic_designer');
+      console.log(`Role members for graphic_designer:`, roleMembers?.map(m => m?._id || m));
+      if (assignedTeamMemberIds.length > 0) {
+        designAssignedTo = assignedTeamMemberIds[0];
+        console.log(`Using assignedTeamMember for graphic_designer: ${designAssignedTo}`);
+      } else if (roleMembers && roleMembers.length > 0) {
+        designAssignedTo = roleMembers[0]._id || roleMembers[0];
+        console.log(`Using default graphic_designer: ${designAssignedTo}`);
+      } else {
+        console.log(`No graphic_designer available for assignment`);
+      }
+    } else if (assignedRole === 'video_editor') {
+      const roleMembers = getTeamMembersForRole('video_editor');
+      console.log(`Role members for video_editor:`, roleMembers?.map(m => m?._id || m));
+      if (assignedTeamMemberIds.length > 0) {
+        designAssignedTo = assignedTeamMemberIds[0];
+        console.log(`Using assignedTeamMember for video_editor: ${designAssignedTo}`);
+      } else if (roleMembers && roleMembers.length > 0) {
+        designAssignedTo = roleMembers[0]._id || roleMembers[0];
+        console.log(`Using default video_editor: ${designAssignedTo}`);
+      } else {
+        console.log(`No video_editor available for assignment`);
+      }
+    }
+
+    // For content task - always use content_writer from project assignment
+    if (defaultContentWriters && defaultContentWriters.length > 0) {
+      contentAssignedTo = defaultContentWriters[0]._id || defaultContentWriters[0];
+      console.log(`Content task assigned to: ${contentAssignedTo}`);
     } else {
-      designAssignedTo = roleToUserMap[assignedRole] || graphicDesigner;
+      console.log(`No default content_writer available`);
     }
 
     // Content writing task (first in workflow) - assigned to content_writer
-    // Use assigned team members if specified, otherwise use default content writer
-    const contentAssignedTo = assignedTeamMembers.length > 0 && planItem.assignedRole === 'content_writer'
-      ? assignedTeamMembers[0]
-      : contentWriter;
-
     if (contentAssignedTo) {
       const contentTask = createTask({
         projectId,
@@ -616,7 +817,7 @@ function generateCreativePlanTasks(creativePlan, projectId, creativeStrategyId, 
       completedBy
     });
     designTask.status = 'design_pending';
-    if (contentWriter || contentAssignedTo) {
+    if (contentAssignedTo) {
       designTask.description = 'This task will become active after content is approved.';
     }
     tasks.push(designTask);

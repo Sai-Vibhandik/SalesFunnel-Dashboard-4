@@ -21,7 +21,8 @@ const {
   updateTaskContent,
   getTeamMembers,
   getTasksByRole,
-  getMyRoleTasks
+  getMyRoleTasks,
+  getMyCreativeTasks
 } = require('../controllers/taskController');
 
 // All routes require authentication
@@ -36,6 +37,9 @@ router.get('/my-tasks', getMyTasks);
 
 // Get tasks for current user by their role
 router.get('/my-role-tasks', getMyRoleTasks);
+
+// Get creative tasks for current user from CreativeStrategy
+router.get('/my-creative-tasks', getMyCreativeTasks);
 
 // Get team members for assignment
 router.get('/team-members', getTeamMembers);

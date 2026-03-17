@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Card, CardBody, CardHeader, Button, Input, Spinner } from '@/components/ui';
-import { Plus, Edit, Trash2, FileText, X, ArrowRight } from 'lucide-react';
-import { projectService } from '@/services/api';
+import { Plus, Edit, Trash2, FileText, X, ArrowRight, Users, Code, Palette } from 'lucide-react';
+import { projectService, authService } from '@/services/api';
 
 const FUNNEL_TYPES = [
   { id: 'video_sales_letter', label: 'Video Sales Letter' },
@@ -32,11 +32,13 @@ const LEAD_CAPTURE_METHODS = [
   { id: 'free_audit', label: 'Free Audit' }
 ];
 
-export default function LandingPagesSection({ projectId, landingPages = [], onSave, loading, isCompleted }) {
+export default function LandingPagesSection({ projectId, landingPages = [], onSave, loading, isCompleted, assignedTeam }) {
   const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [designers, setDesigners] = useState([]);
+  const [developers, setDevelopers] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
     funnelType: 'video_sales_letter',
@@ -48,8 +50,27 @@ export default function LandingPagesSection({ projectId, landingPages = [], onSa
     messaging: '',
     leadCaptureMethod: 'form',
     headline: '',
-    subheadline: ''
+    subheadline: '',
+    assignedDesigner: '',
+    assignedDeveloper: ''
   });
+
+  // Fetch available designers and developers from project's assigned team
+  useEffect(() => {
+    if (assignedTeam) {
+      // Get UI/UX Designers from project's assigned team
+      const uiUxDesigners = assignedTeam.uiUxDesigners || [];
+      const uiUxDesignerLegacy = assignedTeam.uiUxDesigner;
+      const allDesigners = uiUxDesigners.length > 0 ? uiUxDesigners : (uiUxDesignerLegacy ? [uiUxDesignerLegacy] : []);
+      setDesigners(allDesigners);
+
+      // Get Developers from project's assigned team
+      const developersList = assignedTeam.developers || [];
+      const developerLegacy = assignedTeam.developer;
+      const allDevelopers = developersList.length > 0 ? developersList : (developerLegacy ? [developerLegacy] : []);
+      setDevelopers(allDevelopers);
+    }
+  }, [assignedTeam]);
 
   const resetForm = () => {
     setFormData({
@@ -63,7 +84,9 @@ export default function LandingPagesSection({ projectId, landingPages = [], onSa
       messaging: '',
       leadCaptureMethod: 'form',
       headline: '',
-      subheadline: ''
+      subheadline: '',
+      assignedDesigner: designers.length === 1 ? (designers[0]._id || designers[0])?.toString() : '',
+      assignedDeveloper: developers.length === 1 ? (developers[0]._id || developers[0])?.toString() : ''
     });
     setEditingIndex(null);
     setShowForm(false);
@@ -91,7 +114,9 @@ export default function LandingPagesSection({ projectId, landingPages = [], onSa
       messaging: lp.messaging || '',
       leadCaptureMethod: lp.leadCaptureMethod || 'form',
       headline: lp.headline || '',
-      subheadline: lp.subheadline || ''
+      subheadline: lp.subheadline || '',
+      assignedDesigner: lp.assignedDesigner?._id || lp.assignedDesigner?.toString() || '',
+      assignedDeveloper: lp.assignedDeveloper?._id || lp.assignedDeveloper?.toString() || ''
     });
     setEditingIndex(index);
     setShowForm(true);
@@ -100,6 +125,16 @@ export default function LandingPagesSection({ projectId, landingPages = [], onSa
   const handleSave = async () => {
     if (!formData.name.trim()) {
       toast.error('Please enter a landing page name');
+      return;
+    }
+
+    if (!formData.assignedDesigner) {
+      toast.error('Please select a UI/UX Designer for this landing page');
+      return;
+    }
+
+    if (!formData.assignedDeveloper) {
+      toast.error('Please select a Developer for this landing page');
       return;
     }
 
@@ -146,6 +181,13 @@ export default function LandingPagesSection({ projectId, landingPages = [], onSa
       return;
     }
 
+    // Check if all landing pages have team assignments
+    const unassignedLPs = landingPages.filter(lp => !lp.assignedDesigner || !lp.assignedDeveloper);
+    if (unassignedLPs.length > 0) {
+      toast.error(`${unassignedLPs.length} landing page(s) missing team assignments. Please edit and assign designer/developer.`);
+      return;
+    }
+
     try {
       setSaving(true);
       // Mark landing page stage as complete
@@ -161,13 +203,34 @@ export default function LandingPagesSection({ projectId, landingPages = [], onSa
     }
   };
 
+  // Helper to get member name
+  const getMemberName = (member) => {
+    if (!member) return 'Unknown';
+    if (typeof member === 'object') return member.name || 'Unknown';
+    return 'Unknown';
+  };
+
+  // Helper to get designer name by ID
+  const getDesignerName = (id) => {
+    if (!id) return 'Not assigned';
+    const designer = designers.find(d => (d._id || d)?.toString() === id.toString());
+    return designer ? getMemberName(designer) : 'Unknown';
+  };
+
+  // Helper to get developer name by ID
+  const getDeveloperName = (id) => {
+    if (!id) return 'Not assigned';
+    const developer = developers.find(d => (d._id || d)?.toString() === id.toString());
+    return developer ? getMemberName(developer) : 'Unknown';
+  };
+
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Landing Pages</h2>
-            <p className="text-sm text-gray-500">Create landing page strategies for your funnel</p>
+            <p className="text-sm text-gray-500">Create landing page strategies and assign team members for each</p>
           </div>
           {!showForm && (
             <Button onClick={handleAddNew} disabled={loading}>
@@ -232,6 +295,62 @@ export default function LandingPagesSection({ projectId, landingPages = [], onSa
                     <option key={m.id} value={m.id}>{m.label}</option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            {/* Team Member Assignments */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-medium text-blue-800 mb-3 flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                Team Assignments for this Landing Page
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                    <Palette className="w-4 h-4 text-purple-500" />
+                    UI/UX Designer *
+                  </label>
+                  <select
+                    value={formData.assignedDesigner}
+                    onChange={(e) => handleInputChange('assignedDesigner', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  >
+                    <option value="">Select Designer...</option>
+                    {designers.map(d => (
+                      <option key={d._id || d} value={(d._id || d).toString()}>
+                        {getMemberName(d)}
+                      </option>
+                    ))}
+                  </select>
+                  {designers.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      ⚠️ No UI/UX Designers assigned to this project. Contact Admin.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                    <Code className="w-4 h-4 text-green-500" />
+                    Developer *
+                  </label>
+                  <select
+                    value={formData.assignedDeveloper}
+                    onChange={(e) => handleInputChange('assignedDeveloper', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  >
+                    <option value="">Select Developer...</option>
+                    {developers.map(d => (
+                      <option key={d._id || d} value={(d._id || d).toString()}>
+                        {getMemberName(d)}
+                      </option>
+                    ))}
+                  </select>
+                  {developers.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      ⚠️ No Developers assigned to this project. Contact Admin.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -321,7 +440,7 @@ export default function LandingPagesSection({ projectId, landingPages = [], onSa
                   key={lp._id || index}
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
                 >
-                  <div>
+                  <div className="flex-1">
                     <h4 className="font-medium text-gray-900">{lp.name}</h4>
                     <p className="text-sm text-gray-500">
                       {FUNNEL_TYPES.find(ft => ft.id === lp.funnelType)?.label || lp.funnelType} • {PLATFORMS.find(p => p.id === lp.platform)?.label || lp.platform}
@@ -331,6 +450,17 @@ export default function LandingPagesSection({ projectId, landingPages = [], onSa
                         Hook: {lp.hook}
                       </p>
                     )}
+                    {/* Show assigned team members */}
+                    <div className="flex items-center gap-4 mt-2">
+                      <span className="text-xs flex items-center gap-1 text-purple-600">
+                        <Palette className="w-3 h-3" />
+                        {getDesignerName(lp.assignedDesigner)}
+                      </span>
+                      <span className="text-xs flex items-center gap-1 text-green-600">
+                        <Code className="w-3 h-3" />
+                        {getDeveloperName(lp.assignedDeveloper)}
+                      </span>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button

@@ -239,6 +239,17 @@ const projectSchema = new mongoose.Schema({
       type: String,
       trim: true
     },
+    // Team member assignments for this specific landing page
+    assignedDesigner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      description: 'UI/UX Designer assigned to this landing page'
+    },
+    assignedDeveloper: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      description: 'Developer assigned to this landing page'
+    },
     createdAt: {
       type: Date,
       default: Date.now

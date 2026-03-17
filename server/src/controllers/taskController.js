@@ -1341,6 +1341,96 @@ exports.getMyRoleTasks = async (req, res, next) => {
   }
 };
 
+// @desc    Get creative tasks for the current user from CreativeStrategy
+// @route   GET /api/tasks/my-creative-tasks
+// @access  Private
+exports.getMyCreativeTasks = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const userRole = req.user.role;
+
+    console.log('\n=== getMyCreativeTasks ===');
+    console.log('User ID:', userId);
+    console.log('User Role:', userRole);
+
+    // Map user role to assignedRole in creativePlan
+    const roleMap = {
+      'content_writer': 'content_writer',
+      'graphic_designer': 'graphic_designer',
+      'video_editor': 'video_editor'
+    };
+
+    const assignedRole = roleMap[userRole];
+    if (!assignedRole) {
+      console.log('Role not supported for creative tasks:', userRole);
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: []
+      });
+    }
+
+    // Find all CreativeStrategy documents
+    const strategies = await CreativeStrategy.find()
+      .populate('projectId', 'projectName businessName industry');
+
+    console.log(`Found ${strategies.length} creative strategies`);
+
+    const tasks = [];
+    const mongoose = require('mongoose');
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    strategies.forEach(strategy => {
+      // Skip if project was deleted
+      if (!strategy.projectId) return;
+
+      const creativePlan = strategy.creativePlan || [];
+
+      creativePlan.forEach((creative, index) => {
+        // Check if this creative is assigned to the current user
+        const isAssignedToUser = creative.assignedTeamMembers?.some(memberId => {
+          // Handle both ObjectId and string comparisons
+          const memberIdStr = memberId?._id?.toString() || memberId?.toString();
+          return memberIdStr === userId.toString();
+        });
+
+        // Also check if the role matches
+        const roleMatches = creative.assignedRole === assignedRole;
+
+        if (isAssignedToUser && roleMatches) {
+          tasks.push({
+            _id: `${strategy._id}_${creative._id || index}`,
+            projectId: strategy.projectId,
+            creativeStrategyId: strategy._id,
+            creativeName: creative.name || `Creative ${index + 1}`,
+            creativeType: creative.creativeType,
+            subType: creative.subType,
+            objective: creative.objective,
+            platforms: creative.platforms || [],
+            screenSizes: creative.screenSizes || [],
+            assignedRole: creative.assignedRole,
+            assignedTeamMembers: creative.assignedTeamMembers,
+            notes: creative.notes,
+            taskType: 'content_generation',
+            status: 'pending'
+          });
+        }
+      });
+    });
+
+    console.log(`Found ${tasks.length} creative tasks for user ${userId}`);
+
+    res.status(200).json({
+      success: true,
+      count: tasks.length,
+      data: tasks
+    });
+  } catch (error) {
+    console.error('Error in getMyCreativeTasks:', error);
+    next(error);
+  }
+};
+
 // Helper function to get valid status transitions
 function getValidTransitions(currentStatus, taskType) {
   // Landing page design has a different workflow - goes to development after approval

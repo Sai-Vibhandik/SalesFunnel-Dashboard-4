@@ -81,6 +81,8 @@ const STATUS_CONFIG = {
   approved_by_tester: { label: 'Tester Approved', color: 'bg-purple-100 text-purple-800' },
   final_approved: { label: 'Completed', color: 'bg-green-100 text-green-800' },
   rejected: { label: 'Rejected', color: 'bg-red-100 text-red-800' },
+  // Creative task status
+  pending: { label: 'Pending', color: 'bg-orange-100 text-orange-800' },
   // Content workflow
   content_pending: { label: 'Content Pending', color: 'bg-orange-100 text-orange-800' },
   content_submitted: { label: 'Content Review', color: 'bg-yellow-100 text-yellow-800' },
@@ -142,7 +144,8 @@ export default function TeamMemberDashboard({ user }) {
         assignedTasks = myTasksRes.data || [];
         setPendingReview(reviewTasks);
       } else {
-        // Other team members: use my-role-tasks to get tasks by assignedRole
+        // All team members (including content_writer): use my-role-tasks to get tasks by assignedRole
+        // Tasks are created in the Task collection by generateTasksFromStrategy when Creative Strategy is completed
         const tasksRes = taskService.getMyRoleTasks
           ? await taskService.getMyRoleTasks()
           : await taskService.getMyTasks();
@@ -156,7 +159,7 @@ export default function TeamMemberDashboard({ user }) {
       const active = assignedProjects.filter(p => p.isActive && p.status === 'active').length;
       const completed = assignedProjects.filter(p => p.status === 'completed').length;
       const pendingTasks = assignedTasks.filter(t =>
-        ['todo', 'design_pending', 'development_pending', 'content_pending'].includes(t.status)
+        ['todo', 'design_pending', 'development_pending', 'content_pending', 'pending'].includes(t.status)
       ).length;
       const inProgressTasks = assignedTasks.filter(t =>
         ['in_progress', 'submitted', 'design_submitted', 'development_submitted', 'content_submitted'].includes(t.status)
@@ -310,41 +313,74 @@ export default function TeamMemberDashboard({ user }) {
         <Card>
           <CardBody className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">My Tasks</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {user?.role === 'content_writer' ? 'My Creative Assignments' : 'My Tasks'}
+              </h2>
               <Button variant="secondary" size="sm" onClick={() => navigate('/tasks')}>
                 View All Tasks
                 <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
             </div>
             <div className="space-y-3">
-              {tasks.slice(0, 5).map((task) => (
-                <div key={task._id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      {getStatusBadge(task.status)}
-                      <span className="text-sm text-gray-500">{task.taskType?.replace(/_/g, ' ')}</span>
-                    </div>
-                    <p className="font-medium text-gray-900">{task.taskTitle}</p>
-                    <p className="text-sm text-gray-500">
-                      {task.projectId?.businessName || 'Unknown Project'}
-                      {task.dueDate && (
-                        <span className="ml-2">
-                          • Due: {new Date(task.dueDate).toLocaleDateString()}
+              {tasks.slice(0, 5).map((task) => {
+                // Check if this is a creative task from CreativeStrategy
+                const isCreativeTask = task.taskType === 'content_generation' || task.creativeType;
+
+                return (
+                  <div key={task._id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        {getStatusBadge(task.status)}
+                        <span className="text-sm text-gray-500">
+                          {isCreativeTask
+                            ? `${task.creativeType || 'Creative'} • ${task.subType || task.taskType}`
+                            : task.taskType?.replace(/_/g, ' ')
+                          }
                         </span>
+                      </div>
+                      <p className="font-medium text-gray-900">
+                        {isCreativeTask ? task.creativeName : task.taskTitle}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {task.projectId?.businessName || task.projectId?.projectName || 'Unknown Project'}
+                        {task.platforms && task.platforms.length > 0 && (
+                          <span className="ml-2">
+                            • {task.platforms.join(', ')}
+                          </span>
+                        )}
+                        {task.dueDate && (
+                          <span className="ml-2">
+                            • Due: {new Date(task.dueDate).toLocaleDateString()}
+                          </span>
+                        )}
+                      </p>
+                      {task.notes && (
+                        <p className="text-sm text-gray-400 mt-1 line-clamp-1">{task.notes}</p>
                       )}
-                    </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isCreativeTask ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => navigate(`/creatives?projectId=${task.projectId?._id || task.projectId}`)}
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          View Creative
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => navigate(`/tasks/${task._id}`)}
+                        >
+                          View Task
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => navigate(`/tasks/${task._id}`)}
-                    >
-                      View Task
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardBody>
         </Card>

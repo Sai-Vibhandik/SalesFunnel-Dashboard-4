@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Card, CardBody, CardHeader, Button, Input, Textarea, Spinner } from '@/components/ui';
 import { StageProgressTracker } from '@/components/workflow';
-import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Users, Code, Palette } from 'lucide-react';
 import { projectService } from '@/services/api';
 
 const LANDING_PAGE_TYPES = [
@@ -41,6 +41,8 @@ export default function LandingPageStrategyPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [project, setProject] = useState(null);
+  const [designers, setDesigners] = useState([]);
+  const [developers, setDevelopers] = useState([]);
 
   // Form state
   const [name, setName] = useState('');
@@ -54,6 +56,8 @@ export default function LandingPageStrategyPage() {
   const [leadCaptureMethod, setLeadCaptureMethod] = useState('form');
   const [headline, setHeadline] = useState('');
   const [subheadline, setSubheadline] = useState('');
+  const [assignedDesigner, setAssignedDesigner] = useState('');
+  const [assignedDeveloper, setAssignedDeveloper] = useState('');
 
   useEffect(() => {
     if (!projectId) {
@@ -69,6 +73,21 @@ export default function LandingPageStrategyPage() {
 
       const projectRes = await projectService.getProject(projectId);
       setProject(projectRes.data);
+
+      // Extract designers and developers from project's assigned team
+      const assignedTeam = projectRes.data.assignedTeam || {};
+
+      // Get UI/UX Designers
+      const uiUxDesigners = assignedTeam.uiUxDesigners || [];
+      const uiUxDesignerLegacy = assignedTeam.uiUxDesigner;
+      const allDesigners = uiUxDesigners.length > 0 ? uiUxDesigners : (uiUxDesignerLegacy ? [uiUxDesignerLegacy] : []);
+      setDesigners(allDesigners);
+
+      // Get Developers
+      const developersList = assignedTeam.developers || [];
+      const developerLegacy = assignedTeam.developer;
+      const allDevelopers = developersList.length > 0 ? developersList : (developerLegacy ? [developerLegacy] : []);
+      setDevelopers(allDevelopers);
 
       // Check if traffic strategy is completed
       if (!projectRes.data.stages?.trafficStrategy?.isCompleted) {
@@ -92,9 +111,19 @@ export default function LandingPageStrategyPage() {
           setLeadCaptureMethod(lp.leadCaptureMethod || 'form');
           setHeadline(lp.headline || '');
           setSubheadline(lp.subheadline || '');
+          setAssignedDesigner(lp.assignedDesigner?._id || lp.assignedDesigner?.toString() || '');
+          setAssignedDeveloper(lp.assignedDeveloper?._id || lp.assignedDeveloper?.toString() || '');
         } else {
           toast.error('Landing page not found');
           navigate(`/landing-pages?projectId=${projectId}`);
+        }
+      } else {
+        // For new landing page, pre-select if only one designer/developer available
+        if (allDesigners.length === 1) {
+          setAssignedDesigner((allDesigners[0]._id || allDesigners[0])?.toString());
+        }
+        if (allDevelopers.length === 1) {
+          setAssignedDeveloper((allDevelopers[0]._id || allDevelopers[0])?.toString());
         }
       }
     } catch (error) {
@@ -109,6 +138,16 @@ export default function LandingPageStrategyPage() {
   const onSave = async () => {
     if (!name.trim()) {
       toast.error('Please enter a landing page name');
+      return;
+    }
+
+    if (!assignedDesigner) {
+      toast.error('Please select a UI/UX Designer for this landing page');
+      return;
+    }
+
+    if (!assignedDeveloper) {
+      toast.error('Please select a Developer for this landing page');
       return;
     }
 
@@ -127,6 +166,8 @@ export default function LandingPageStrategyPage() {
         leadCaptureMethod,
         headline,
         subheadline,
+        assignedDesigner,
+        assignedDeveloper,
       };
 
       if (landingPageId) {
@@ -156,6 +197,16 @@ export default function LandingPageStrategyPage() {
       return;
     }
 
+    if (!assignedDesigner) {
+      toast.error('Please select a UI/UX Designer for this landing page');
+      return;
+    }
+
+    if (!assignedDeveloper) {
+      toast.error('Please select a Developer for this landing page');
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -171,6 +222,8 @@ export default function LandingPageStrategyPage() {
         leadCaptureMethod,
         headline,
         subheadline,
+        assignedDesigner,
+        assignedDeveloper,
       };
 
       if (landingPageId) {
@@ -265,6 +318,71 @@ export default function LandingPageStrategyPage() {
               </select>
             </div>
           </div>
+        </CardBody>
+      </Card>
+
+      {/* Team Assignment */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Users className="w-5 h-5 text-primary-500" />
+            Team Assignment
+          </h2>
+          <p className="text-sm text-gray-500">Assign team members for this landing page</p>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                <Palette className="w-4 h-4 text-purple-500" />
+                UI/UX Designer *
+              </label>
+              <select
+                value={assignedDesigner}
+                onChange={(e) => setAssignedDesigner(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              >
+                <option value="">Select Designer...</option>
+                {designers.map(d => (
+                  <option key={d._id || d} value={(d._id || d).toString()}>
+                    {d.name || 'Unknown'}
+                  </option>
+                ))}
+              </select>
+              {designers.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  ⚠️ No UI/UX Designers assigned to this project. Contact Admin.
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                <Code className="w-4 h-4 text-green-500" />
+                Developer *
+              </label>
+              <select
+                value={assignedDeveloper}
+                onChange={(e) => setAssignedDeveloper(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              >
+                <option value="">Select Developer...</option>
+                {developers.map(d => (
+                  <option key={d._id || d} value={(d._id || d).toString()}>
+                    {d.name || 'Unknown'}
+                  </option>
+                ))}
+              </select>
+              {developers.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  ⚠️ No Developers assigned to this project. Contact Admin.
+                </p>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">
+            Each landing page needs one UI/UX Designer for design and one Developer for implementation.
+            These assignments will be used when generating tasks.
+          </p>
         </CardBody>
       </Card>
 

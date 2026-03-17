@@ -108,7 +108,8 @@ export default function TasksPage() {
       if (projectId) {
         res = await taskService.getProjectTasks(projectId, params);
       } else {
-        // Use my-role-tasks for team members to get tasks assigned to their role
+        // Get tasks from the Task collection (created by generateTasksFromStrategy)
+        // This is the primary source for all team member tasks
         res = taskService.getMyRoleTasks
           ? await taskService.getMyRoleTasks(params)
           : await taskService.getMyTasks(params);

@@ -866,7 +866,7 @@ exports.createNotification = createNotification;
 exports.addLandingPage = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, funnelType, platform, hook, angle, cta, offer, messaging, leadCaptureMethod, headline, subheadline } = req.body;
+    const { name, funnelType, platform, hook, angle, cta, offer, messaging, leadCaptureMethod, headline, subheadline, assignedDesigner, assignedDeveloper } = req.body;
 
     const project = await Project.findById(id);
     if (!project) {
@@ -899,6 +899,8 @@ exports.addLandingPage = async (req, res, next) => {
       leadCaptureMethod: leadCaptureMethod || 'form',
       headline: headline || '',
       subheadline: subheadline || '',
+      assignedDesigner: assignedDesigner || null,
+      assignedDeveloper: assignedDeveloper || null,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -994,7 +996,7 @@ exports.getLandingPage = async (req, res, next) => {
 exports.updateLandingPage = async (req, res, next) => {
   try {
     const { id, landingPageId } = req.params;
-    const { name, funnelType, platform, hook, angle, cta, offer, messaging, leadCaptureMethod, headline, subheadline } = req.body;
+    const { name, funnelType, platform, hook, angle, cta, offer, messaging, leadCaptureMethod, headline, subheadline, assignedDesigner, assignedDeveloper } = req.body;
 
     const project = await Project.findById(id);
     if (!project) {
@@ -1034,6 +1036,8 @@ exports.updateLandingPage = async (req, res, next) => {
     if (leadCaptureMethod !== undefined) landingPage.leadCaptureMethod = leadCaptureMethod;
     if (headline !== undefined) landingPage.headline = headline;
     if (subheadline !== undefined) landingPage.subheadline = subheadline;
+    if (assignedDesigner !== undefined) landingPage.assignedDesigner = assignedDesigner;
+    if (assignedDeveloper !== undefined) landingPage.assignedDeveloper = assignedDeveloper;
     landingPage.updatedAt = new Date();
 
     await project.save();
