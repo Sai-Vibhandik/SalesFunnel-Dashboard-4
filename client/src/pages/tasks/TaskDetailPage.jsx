@@ -867,6 +867,104 @@ export default function TaskDetailPage() {
             </Card>
           )}
 
+          {/* Approved Content - For Designers/Editors working on creative tasks */}
+          {['graphic_design', 'video_editing'].includes(task.taskType) && ['design_pending', 'design_submitted', 'design_rejected', 'design_approved'].includes(task.status) && (task.contentLink || task.contentFile?.path || task.contentNotes) && (
+            <Card>
+              <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50">
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-green-600" />
+                  Approved Content Reference
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Content approved by tester - use this for your design
+                </p>
+              </CardHeader>
+              <CardBody className="p-6">
+                <div className="space-y-4">
+                  {/* Content Link */}
+                  {task.contentLink && (
+                    <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                      <h4 className="text-sm font-medium text-green-800 mb-2 flex items-center gap-2">
+                        <Link className="w-4 h-4" />
+                        Content Link
+                      </h4>
+                      <a
+                        href={task.contentLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-green-600 hover:underline flex items-center gap-1 text-sm break-all"
+                      >
+                        {task.contentLink}
+                        <ExternalLink className="w-4 h-4 flex-shrink-0" />
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Content File */}
+                  {task.contentFile?.path && (
+                    <div className="p-4 bg-gray-50 rounded-lg border">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                        <FileIcon className="w-4 h-4" />
+                        Content File
+                      </h4>
+                      <a
+                        href={task.contentFile.path}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-white border rounded text-sm text-blue-600 hover:bg-gray-100 flex items-center gap-1 w-fit"
+                      >
+                        <Download className="w-4 h-4" />
+                        {task.contentFile.name || 'Download Content File'}
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Content Notes */}
+                  {task.contentNotes && (
+                    <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                      <h4 className="text-sm font-medium text-yellow-800 mb-2 flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4" />
+                        Notes from Content Creator
+                      </h4>
+                      <p className="text-sm text-gray-700">{task.contentNotes}</p>
+                    </div>
+                  )}
+
+                  {/* Content Output (headline, bodyText, cta, script) */}
+                  {task.contentOutput && (task.contentOutput.headline || task.contentOutput.bodyText || task.contentOutput.cta || task.contentOutput.script) && (
+                    <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <h4 className="text-sm font-medium text-blue-800 mb-3">Content Output</h4>
+                      {task.contentOutput.headline && (
+                        <div className="mb-2">
+                          <span className="text-xs font-medium text-blue-600">Headline:</span>
+                          <p className="text-sm text-gray-800">{task.contentOutput.headline}</p>
+                        </div>
+                      )}
+                      {task.contentOutput.bodyText && (
+                        <div className="mb-2">
+                          <span className="text-xs font-medium text-blue-600">Body Text:</span>
+                          <p className="text-sm text-gray-800 whitespace-pre-wrap">{task.contentOutput.bodyText}</p>
+                        </div>
+                      )}
+                      {task.contentOutput.cta && (
+                        <div className="mb-2">
+                          <span className="text-xs font-medium text-blue-600">CTA:</span>
+                          <p className="text-sm text-gray-800">{task.contentOutput.cta}</p>
+                        </div>
+                      )}
+                      {task.contentOutput.script && (
+                        <div>
+                          <span className="text-xs font-medium text-blue-600">Script:</span>
+                          <p className="text-sm text-gray-800 whitespace-pre-wrap">{task.contentOutput.script}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CardBody>
+            </Card>
+          )}
+
           {/* Submitted Design - For Testers reviewing landing page design */}
           {task.taskType === 'landing_page_design' && ['design_submitted', 'design_approved', 'design_rejected'].includes(task.status) && (task.designLink || task.designFile?.path || task.designNotes) && (
             <Card>

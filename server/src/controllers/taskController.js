@@ -530,14 +530,184 @@ exports.testerReview = async (req, res, next) => {
       });
     }
 
-    // If content is finalized, find the paired design task and notify the designer/editor
+    // If content is finalized, find the paired design task and copy the approved content
     // Note: Content goes directly to designer after tester approval, NOT to marketer
     // Marketer will only be notified after design/video approval
     if (approved && newStatus === 'content_final_approved') {
-      // Content is finalized - designer/editor can now start working
-      // The notification was already sent to the assigned designer/editor above
-      // No need to notify marketer at this stage
-      console.log('Content finalized - design task can now proceed');
+      // Content is finalized - find the paired design task and copy the approved content
+      console.log('\n========== CONTENT APPROVAL - COPYING TO DESIGN TASK ==========');
+      console.log('Content task ID:', task._id);
+      console.log('Content task type:', task.taskType);
+      console.log('Content task creativeOutputType:', task.creativeOutputType);
+      console.log('Content task adTypeKey:', task.adTypeKey);
+      console.log('Content task creativeStrategyId:', task.creativeStrategyId);
+      console.log('Content task projectId:', task.projectId?._id || task.projectId);
+
+      // Log content fields from the content task
+      console.log('\n--- Content Task Fields ---');
+      console.log('contentLink:', task.contentLink || '(none)');
+      console.log('contentFile:', task.contentFile ? JSON.stringify(task.contentFile) : '(none)');
+      console.log('contentNotes:', task.contentNotes ? `"${task.contentNotes.substring(0, 50)}..."` : '(none)');
+      console.log('contentOutput:', task.contentOutput ? JSON.stringify(task.contentOutput) : '(none)');
+
+      // Find the paired design task based on creativeStrategyId and adTypeKey/creativeOutputType
+      const videoTypes = ['video_creative', 'ugc_content', 'testimonial_content', 'demo_video', 'reel'];
+      const isVideoTask = task.creativeOutputType && videoTypes.includes(task.creativeOutputType);
+      const designTaskType = isVideoTask ? 'video_editing' : 'graphic_design';
+
+      console.log('\n--- Design Task Search ---');
+      console.log('Is video task:', isVideoTask);
+      console.log('Design task type to find:', designTaskType);
+
+      const projectId = task.projectId._id || task.projectId;
+      let designTask = null;
+
+      // First, try to find design task by parentTaskId pointing to this content task
+      // This is the primary way to link content task to design task
+      console.log('\nStrategy 1: Search by parentTaskId...');
+      designTask = await Task.findOne({
+        projectId: projectId,
+        taskType: designTaskType,
+        parentTaskId: task._id
+      });
+      console.log('Result:', designTask ? `Found design task ${designTask._id}` : 'Not found');
+
+      // If not found by parentTaskId, try to find by creativeStrategyId and adTypeKey
+      // Remove status requirement - design task might be in any status
+      if (!designTask && task.creativeStrategyId) {
+        console.log('\nStrategy 2: Search by creativeStrategyId and adTypeKey...');
+        const query = {
+          projectId: projectId,
+          taskType: designTaskType,
+          creativeStrategyId: task.creativeStrategyId
+        };
+        if (task.adTypeKey) {
+          query.adTypeKey = task.adTypeKey;
+        }
+        console.log('Query:', JSON.stringify(query));
+        designTask = await Task.findOne(query);
+        console.log('Result:', designTask ? `Found design task ${designTask._id}` : 'Not found');
+      }
+
+      // If still not found, try to find by matching creativeOutputType
+      if (!designTask) {
+        console.log('\nStrategy 3: Search by creativeOutputType...');
+        const query = {
+          projectId: projectId,
+          taskType: designTaskType,
+          creativeOutputType: task.creativeOutputType
+        };
+        console.log('Query:', JSON.stringify(query));
+        designTask = await Task.findOne(query);
+        console.log('Result:', designTask ? `Found design task ${designTask._id}` : 'Not found');
+      }
+
+      // Last resort: find by assetType match
+      if (!designTask && task.assetType) {
+        console.log('\nStrategy 4: Search by assetType...');
+        const query = {
+          projectId: projectId,
+          taskType: designTaskType
+        };
+        if (isVideoTask) {
+          query.assetType = { $in: ['video_creative', 'video_creative_content', 'ugc_content', 'testimonial_content', 'demo_video'] };
+        } else {
+          query.assetType = { $in: ['image_creative', 'carousel_creative', 'image_creative_content', 'carousel_creative_content'] };
+        }
+        console.log('Query:', JSON.stringify(query));
+        designTask = await Task.findOne(query);
+        console.log('Result:', designTask ? `Found design task ${designTask._id}` : 'Not found');
+      }
+
+      // Final fallback: just find any design task of the right type for this project
+      if (!designTask) {
+        console.log('\nStrategy 5: Final fallback - find any design task of this type...');
+        const query = {
+          projectId: projectId,
+          taskType: designTaskType
+        };
+        console.log('Query:', JSON.stringify(query));
+        designTask = await Task.findOne(query);
+        console.log('Result:', designTask ? `Found design task ${designTask._id}` : 'Not found');
+      }
+
+      if (designTask) {
+        // Copy the approved content to the design task
+        console.log('\n--- Copying Content to Design Task ---');
+        console.log('Design task ID:', designTask._id);
+        console.log('Design task title:', designTask.taskTitle);
+        console.log('Design task status:', designTask.status);
+        console.log('Design task assignedTo:', designTask.assignedTo?._id || designTask.assignedTo || '(none)');
+
+        // Log what we're about to copy
+        console.log('Content to copy:');
+        console.log('  - contentLink:', task.contentLink || '(empty)');
+        console.log('  - contentFile:', task.contentFile ? JSON.stringify(task.contentFile) : '(empty)');
+        console.log('  - contentNotes:', task.contentNotes ? `"${task.contentNotes.substring(0, 100)}..."` : '(empty)');
+        console.log('  - contentOutput:', task.contentOutput ? JSON.stringify({
+          headline: task.contentOutput.headline || '(none)',
+          bodyText: task.contentOutput.bodyText ? '(present)' : '(none)',
+          cta: task.contentOutput.cta || '(none)',
+          script: task.contentOutput.script ? '(present)' : '(none)'
+        }) : '(empty)');
+
+        // Copy the content fields
+        designTask.contentLink = task.contentLink || null;
+        designTask.contentFile = task.contentFile || null;
+        designTask.contentNotes = task.contentNotes || null;
+        designTask.contentOutput = task.contentOutput || null;
+
+        // Also copy strategy context for reference
+        if (task.strategyContext) {
+          designTask.strategyContext = {
+            ...designTask.strategyContext,
+            // Preserve design-specific context but add content info
+            approvedContentLink: task.contentLink,
+            approvedContentNotes: task.contentNotes
+          };
+        }
+
+        await designTask.save();
+        console.log('✓ Successfully saved design task with copied content');
+
+        // Verify the save worked
+        const verifyTask = await Task.findById(designTask._id);
+        console.log('Verification - design task contentLink:', verifyTask.contentLink || '(empty)');
+        console.log('Verification - design task contentFile:', verifyTask.contentFile ? '(present)' : '(empty)');
+        console.log('Verification - design task contentNotes:', verifyTask.contentNotes ? '(present)' : '(empty)');
+
+        // Notify the assigned designer/editor
+        if (designTask.assignedTo) {
+          await Notification.create({
+            recipient: designTask.assignedTo._id || designTask.assignedTo,
+            type: 'content_approved',
+            title: 'Approved Content Ready',
+            message: `The content for "${task.taskTitle}" has been approved and is ready for ${isVideoTask ? 'video editing' : 'design'}. You can now view the approved content.`,
+            projectId: task.projectId._id || task.projectId
+          });
+          console.log('✓ Notification sent to assigned designer/editor');
+        }
+      } else {
+        console.log('\n⚠ WARNING: No paired design task found for content task');
+        console.log('This means the approved content will NOT be available to the designer/editor.');
+        console.log('Content task:', task._id);
+        console.log('creativeOutputType:', task.creativeOutputType);
+        console.log('adTypeKey:', task.adTypeKey);
+        console.log('projectId:', projectId);
+        console.log('creativeStrategyId:', task.creativeStrategyId);
+
+        // List all design tasks for this project for debugging
+        const allDesignTasks = await Task.find({
+          projectId: projectId,
+          taskType: { $in: ['graphic_design', 'video_editing'] }
+        }).select('_id taskType taskTitle status creativeOutputType adTypeKey creativeStrategyId parentTaskId');
+
+        console.log('\nAll design tasks for this project:');
+        allDesignTasks.forEach(dt => {
+          console.log(`  - ${dt._id}: ${dt.taskType} "${dt.taskTitle}" status=${dt.status} creativeOutputType=${dt.creativeOutputType} adTypeKey=${dt.adTypeKey} parentTaskId=${dt.parentTaskId || '(none)'}`);
+        });
+      }
+      console.log('========== END CONTENT APPROVAL ==========\n');
     }
 
     // If landing page design is approved, notify developer

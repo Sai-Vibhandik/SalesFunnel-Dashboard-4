@@ -122,24 +122,60 @@ async function generateTasksFromStrategy(projectId, creativeStrategy, completedB
     console.log(`graphicDesigner (legacy):`, project.assignedTeam?.graphicDesigner?._id || 'none');
     console.log(`videoEditor (legacy):`, project.assignedTeam?.videoEditor?._id || 'none');
 
+    // Check for existing tasks to prevent duplicates
+    const existingTasks = await Task.find({
+      projectId,
+      taskType: { $in: ['content_creation', 'graphic_design', 'video_editing', 'landing_page_design', 'landing_page_development'] }
+    }).select('taskType creativeStrategyId adTypeKey landingPageId');
+
+    // Build sets for quick duplicate checking
+    const existingAdTypeKeys = new Set(
+      existingTasks
+        .filter(t => t.adTypeKey)
+        .map(t => t.adTypeKey)
+    );
+    const existingCreativeStrategyTasks = existingTasks.filter(t => t.creativeStrategyId).length;
+    const existingLandingPageIds = new Set(
+      existingTasks
+        .filter(t => t.landingPageId)
+        .map(t => t.landingPageId.toString())
+    );
+
+    console.log(`Found ${existingTasks.length} existing tasks for project (${existingAdTypeKeys.size} ad types, ${existingCreativeStrategyTasks} creative strategy, ${existingLandingPageIds.size} landing pages)`);
+
     // Generate tasks from legacy ad types
     for (const adType of adTypes) {
+      // Skip if tasks for this ad type already exist
+      if (existingAdTypeKeys.has(adType.typeKey)) {
+        console.log(`Skipping ad type ${adType.typeName} (${adType.typeKey}) - tasks already exist`);
+        continue;
+      }
+
       const adTypeTasks = generateAdTypeTasks(adType, projectId, creativeStrategy?._id || null, strategyContext, project, completedBy, contextLink, contextPdfUrl);
       tasks.push(...adTypeTasks);
     }
 
     // Generate tasks from new creative plan
     if (creativePlan.length > 0) {
-      const creativePlanTasks = generateCreativePlanTasks(creativePlan, projectId, creativeStrategy?._id || null, strategyContext, project, completedBy, contextLink, contextPdfUrl);
-      tasks.push(...creativePlanTasks);
-    }
+      // Check which creative plan items already have tasks
+      const existingCreativePlanTasks = await Task.find({
+        projectId,
+        creativeStrategyId: creativeStrategy?._id,
+        taskType: { $in: ['content_creation', 'graphic_design', 'video_editing'] }
+      }).select('taskType creativeStrategyId');
 
-    // Check for existing landing page tasks to prevent duplicates
-    const existingLandingPageTasks = await Task.find({
-      projectId,
-      taskType: { $in: ['landing_page_design', 'landing_page_development'] }
-    }).select('landingPageId');
-    const existingLandingPageIds = new Set(existingLandingPageTasks.map(t => t.landingPageId?.toString()).filter(Boolean));
+      const existingPlanTaskKeys = new Set(
+        existingCreativePlanTasks.map(t => `${t.taskType}_${t.creativeStrategyId}`)
+      );
+
+      // Only generate tasks if no tasks exist for this creative strategy
+      if (existingPlanTaskKeys.size === 0) {
+        const creativePlanTasks = generateCreativePlanTasks(creativePlan, projectId, creativeStrategy?._id || null, strategyContext, project, completedBy, contextLink, contextPdfUrl);
+        tasks.push(...creativePlanTasks);
+      } else {
+        console.log(`Skipping creative plan tasks - ${existingPlanTaskKeys.size} tasks already exist for creative strategy`);
+      }
+    }
 
     // Generate landing page tasks for EACH landing page that doesn't already have tasks
     // Landing pages are embedded in the Project document
@@ -161,6 +197,10 @@ async function generateTasksFromStrategy(projectId, creativeStrategy, completedB
 
     // Save all tasks
     const savedTasks = await Task.insertMany(tasks);
+
+    // Link design/video tasks to their parent content tasks
+    // This is crucial for passing approved content from content task to design task
+    await linkContentToDesignTasks(savedTasks, projectId);
 
     // Send notifications to assigned users
     await sendTaskAssignmentNotifications(savedTasks, project);
@@ -340,6 +380,7 @@ function generateAdTypeTasks(adType, projectId, creativeStrategyId, strategyCont
         adTypeName: adType.typeName,
         taskType: 'graphic_design',
         assetType: 'image_creative',
+        creativeOutputType: 'image_creative',
         taskTitle: `${adType.typeName} - Image Creative ${i + 1}`,
         assignedRole: 'graphic_designer',
         assignedTo: graphicDesigner,
@@ -406,6 +447,7 @@ function generateAdTypeTasks(adType, projectId, creativeStrategyId, strategyCont
         adTypeName: adType.typeName,
         taskType: 'video_editing',
         assetType: 'video_creative',
+        creativeOutputType: 'video_creative',
         taskTitle: `${adType.typeName} - Video Creative ${i + 1}`,
         assignedRole: 'video_editor',
         assignedTo: videoEditor,
@@ -471,6 +513,7 @@ function generateAdTypeTasks(adType, projectId, creativeStrategyId, strategyCont
         adTypeName: adType.typeName,
         taskType: 'graphic_design',
         assetType: 'carousel_creative',
+        creativeOutputType: 'carousel_creative',
         taskTitle: `${adType.typeName} - Carousel Creative ${i + 1}`,
         assignedRole: 'graphic_designer',
         assignedTo: graphicDesigner,
@@ -1249,6 +1292,145 @@ async function updateTaskStatus(taskId, newStatus, userId, notes = '') {
 
   await task.save();
   return task;
+}
+
+/**
+ * Link design/video tasks to their parent content tasks
+ * This ensures approved content can be passed from content task to design task
+ */
+async function linkContentToDesignTasks(savedTasks, projectId) {
+  try {
+    // Find all content creation tasks
+    const contentTasks = savedTasks.filter(t => t.taskType === 'content_creation');
+
+    if (contentTasks.length === 0) {
+      console.log('No content tasks to link');
+      return;
+    }
+
+    console.log(`Linking ${contentTasks.length} content tasks to design/video tasks...`);
+
+    // Find all design/video tasks
+    const designTasks = savedTasks.filter(t => t.taskType === 'graphic_design' || t.taskType === 'video_editing');
+    console.log(`Found ${designTasks.length} design/video tasks to potentially link`);
+
+    // Track which design tasks have been linked to prevent duplicate linking
+    const linkedDesignTaskIds = new Set();
+
+    // For each content task, find the corresponding design/video task
+    for (const contentTask of contentTasks) {
+      // Determine the design task type based on content task's creativeOutputType
+      const videoTypes = ['video_creative', 'ugc_content', 'testimonial_content', 'demo_video', 'reel'];
+      const isVideoContent = contentTask.creativeOutputType && videoTypes.includes(contentTask.creativeOutputType);
+      const designTaskType = isVideoContent ? 'video_editing' : 'graphic_design';
+
+      console.log(`\nLooking for ${designTaskType} task for content task ${contentTask._id}`);
+      console.log(`  Content task: creativeOutputType=${contentTask.creativeOutputType}, adTypeKey=${contentTask.adTypeKey}, creativeStrategyId=${contentTask.creativeStrategyId}`);
+
+      let designTask = null;
+
+      // Strategy 1: Match by adTypeKey (legacy ad types) - only find unlinked tasks
+      if (contentTask.adTypeKey) {
+        designTask = designTasks.find(t =>
+          t.taskType === designTaskType &&
+          t.adTypeKey === contentTask.adTypeKey &&
+          t.creativeStrategyId?.toString() === contentTask.creativeStrategyId?.toString() &&
+          !linkedDesignTaskIds.has(t._id.toString())
+        );
+        if (designTask) {
+          console.log(`  Found by adTypeKey: ${designTask._id}`);
+        }
+      }
+
+      // Strategy 2: Match by creativeType (most unique identifier in creative plan)
+      // Both tasks have creativeType set from planItem.subType or planItem.adType
+      if (!designTask && contentTask.strategyContext?.creativeType) {
+        designTask = designTasks.find(t =>
+          t.taskType === designTaskType &&
+          t.strategyContext?.creativeType === contentTask.strategyContext?.creativeType &&
+          t.creativeStrategyId?.toString() === contentTask.creativeStrategyId?.toString() &&
+          !linkedDesignTaskIds.has(t._id.toString())
+        );
+        if (designTask) {
+          console.log(`  Found by creativeType: ${designTask._id}`);
+        }
+      }
+
+      // Strategy 3: Match by creativeOutputType and creativeStrategyId - only find unlinked tasks
+      if (!designTask && contentTask.creativeOutputType) {
+        designTask = designTasks.find(t =>
+          t.taskType === designTaskType &&
+          t.creativeOutputType === contentTask.creativeOutputType &&
+          t.creativeStrategyId?.toString() === contentTask.creativeStrategyId?.toString() &&
+          !linkedDesignTaskIds.has(t._id.toString())
+        );
+        if (designTask) {
+          console.log(`  Found by creativeOutputType: ${designTask._id}`);
+        }
+      }
+
+      // Strategy 4: Match by order in same creative type group (fallback for legacy ad types with multiple creatives)
+      // This handles cases where multiple image creatives exist with same adTypeKey
+      if (!designTask && contentTask.creativeOutputType) {
+        // Get all unlinked design tasks of the same type
+        const unlinkedDesignTasks = designTasks.filter(t =>
+          t.taskType === designTaskType &&
+          t.creativeOutputType === contentTask.creativeOutputType &&
+          t.creativeStrategyId?.toString() === contentTask.creativeStrategyId?.toString() &&
+          !linkedDesignTaskIds.has(t._id.toString())
+        );
+
+        // Get all content tasks of the same type (for counting)
+        const sameTypeContentTasks = contentTasks.filter(t =>
+          t.creativeOutputType === contentTask.creativeOutputType &&
+          t.creativeStrategyId?.toString() === contentTask.creativeStrategyId?.toString()
+        );
+
+        // Find the index of this content task among same-type content tasks
+        const contentIndex = sameTypeContentTasks.findIndex(t => t._id.toString() === contentTask._id.toString());
+
+        // Pick the design task at the same index
+        if (contentIndex >= 0 && contentIndex < unlinkedDesignTasks.length) {
+          designTask = unlinkedDesignTasks[contentIndex];
+          console.log(`  Found by order matching: ${designTask._id} (content index ${contentIndex})`);
+        }
+      }
+
+      // Strategy 5: For landing page tasks, match by landingPageId
+      if (!designTask && contentTask.landingPageId) {
+        designTask = designTasks.find(t =>
+          t.taskType === designTaskType &&
+          t.landingPageId?.toString() === contentTask.landingPageId?.toString() &&
+          !linkedDesignTaskIds.has(t._id.toString())
+        );
+        if (designTask) {
+          console.log(`  Found by landingPageId: ${designTask._id}`);
+        }
+      }
+
+      if (designTask) {
+        // Update the design task to link to the content task
+        designTask.parentTaskId = contentTask._id;
+        await designTask.save();
+        linkedDesignTaskIds.add(designTask._id.toString());
+        console.log(`  Linked ${designTaskType} task ${designTask._id} to content task ${contentTask._id}`);
+      } else {
+        console.log(`  No matching ${designTaskType} task found for content task ${contentTask._id}`);
+        console.log(`  Available unlinked design tasks:`, designTasks.filter(t => t.taskType === designTaskType && !linkedDesignTaskIds.has(t._id.toString())).map(t => ({
+          _id: t._id,
+          creativeOutputType: t.creativeOutputType,
+          adTypeKey: t.adTypeKey,
+          creativeType: t.strategyContext?.creativeType,
+          creativeStrategyId: t.creativeStrategyId
+        })));
+      }
+    }
+
+    console.log('Finished linking content to design tasks');
+  } catch (error) {
+    console.error('Error linking content to design tasks:', error);
+    // Don't throw - this is not critical, tasks can still work
+  }
 }
 
 module.exports = {
