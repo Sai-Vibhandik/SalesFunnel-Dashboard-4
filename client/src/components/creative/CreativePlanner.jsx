@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { Card, CardBody, CardHeader, Button, Textarea, Badge } from '@/components/ui';
 import {
@@ -75,6 +75,7 @@ const createEmptyCreative = () => ({
   screenSizes: [],
   assignedRole: '',
   assignedTeamMembers: [],
+  contentWriter: '', // NEW: Content Writer assigned to this creative
   notes: ''
 });
 
@@ -129,6 +130,7 @@ export default function CreativePlanner({
           screenSizes: item.screenSizes || [],
           assignedRole: item.assignedRole || '',
           assignedTeamMembers: item.assignedTeamMembers || [],
+          contentWriter: item.contentWriter || '', // NEW: Load content writer
           notes: item.notes || ''
         }));
         setCreativePlan(migratedPlan);
@@ -184,37 +186,10 @@ export default function CreativePlanner({
           updatedRow.subType = '';
         }
 
-        // When role changes, AUTO-ASSIGN the project-assigned team members
-        // Performance Marketer cannot manually select - only Admin-assigned members are used
+        // When role changes, clear the team member selection so user can manually select
         if (field === 'assignedRole') {
-          // Get the project-assigned members for this role
-          const fieldConfig = ROLE_TO_TEAM_FIELD[value];
-          if (fieldConfig && projectAssignedTeam) {
-            const assignedMembers = [];
-
-            // Check new array field first
-            const arrayField = projectAssignedTeam[fieldConfig.arrayField];
-            if (arrayField && Array.isArray(arrayField) && arrayField.length > 0) {
-              arrayField.forEach(member => {
-                if (member && (member._id || member.name)) {
-                  assignedMembers.push(member._id?.toString?.() || member._id || member);
-                }
-              });
-            }
-
-            // Fall back to legacy field
-            if (assignedMembers.length === 0) {
-              const legacyField = projectAssignedTeam[fieldConfig.legacyField];
-              if (legacyField) {
-                assignedMembers.push(legacyField._id?.toString?.() || legacyField._id || legacyField);
-              }
-            }
-
-            updatedRow.assignedTeamMembers = assignedMembers;
-            console.log(`Auto-assigned ${assignedMembers.length} members for role "${value}"`);
-          } else {
-            updatedRow.assignedTeamMembers = [];
-          }
+          updatedRow.assignedTeamMembers = [];
+          console.log(`Role changed to "${value}", cleared team member selection for manual assignment`);
         }
 
         return updatedRow;
@@ -238,8 +213,8 @@ export default function CreativePlanner({
     );
   };
 
-  // Get ONLY the project-assigned team members for a role (set by Admin during project creation)
-  // Performance Marketer should NOT be able to change these assignments
+  // Get the project-assigned team members for a role (set by Admin during project creation)
+  // These are the available members that can be manually selected for each creative
   const getProjectAssignedMembers = (role) => {
     console.log('=== getProjectAssignedMembers called ===');
     console.log('Role requested:', role);
@@ -270,12 +245,25 @@ export default function CreativePlanner({
 
     if (arrayField && Array.isArray(arrayField) && arrayField.length > 0) {
       arrayField.forEach(member => {
-        if (member && (member._id || member.name)) {
-          assignedMembers.push({
-            _id: member._id?.toString?.() || member._id || member,
-            name: member.name || 'Unknown',
-            isProjectAssigned: true
-          });
+        // Handle both populated objects and ObjectId strings
+        if (member) {
+          if (typeof member === 'object' && member !== null) {
+            // Populated object with _id and name
+            if (member._id || member.name) {
+              assignedMembers.push({
+                _id: member._id?.toString?.() || member._id || String(member),
+                name: member.name || 'Unknown',
+                isProjectAssigned: true
+              });
+            }
+          } else if (typeof member === 'string') {
+            // ObjectId string
+            assignedMembers.push({
+              _id: member,
+              name: 'Team Member',
+              isProjectAssigned: true
+            });
+          }
         }
       });
       console.log(`Found ${assignedMembers.length} members from array field`);
@@ -287,18 +275,104 @@ export default function CreativePlanner({
       console.log(`Checking legacy field "${fieldConfig.legacyField}":`, legacyField);
 
       if (legacyField) {
-        assignedMembers.push({
-          _id: legacyField._id?.toString?.() || legacyField._id || legacyField,
-          name: legacyField.name || 'Unknown',
-          isProjectAssigned: true
-        });
-        console.log('Found 1 member from legacy field');
+        if (typeof legacyField === 'object' && legacyField !== null) {
+          // Populated object
+          assignedMembers.push({
+            _id: legacyField._id?.toString?.() || legacyField._id || String(legacyField),
+            name: legacyField.name || 'Unknown',
+            isProjectAssigned: true
+          });
+          console.log('Found 1 member from legacy field (object)');
+        } else if (typeof legacyField === 'string') {
+          // ObjectId string
+          assignedMembers.push({
+            _id: legacyField,
+            name: 'Team Member',
+            isProjectAssigned: true
+          });
+          console.log('Found 1 member from legacy field (string)');
+        }
       }
     }
 
     console.log(`Returning ${assignedMembers.length} project-assigned members for role "${role}"`);
     return assignedMembers;
   };
+
+  // Get content writers from project assigned team
+  const getContentWriters = () => {
+    console.log('=== getContentWriters called ===');
+    console.log('projectAssignedTeam:', projectAssignedTeam);
+
+    if (!projectAssignedTeam || Object.keys(projectAssignedTeam).length === 0) {
+      console.log('No projectAssignedTeam data available');
+      return [];
+    }
+
+    const contentWriters = [];
+
+    // Check new array field first
+    const arrayField = projectAssignedTeam.contentWriters;
+    console.log('contentWriters array field:', arrayField);
+
+    if (arrayField && Array.isArray(arrayField) && arrayField.length > 0) {
+      arrayField.forEach(member => {
+        console.log('Processing contentWriter member:', member);
+
+        // Handle both populated objects and ObjectId strings
+        if (member) {
+          if (typeof member === 'object' && member !== null) {
+            // Populated object with _id and name
+            if (member._id || member.name) {
+              contentWriters.push({
+                _id: member._id?.toString?.() || member._id || String(member),
+                name: member.name || 'Unknown'
+              });
+            }
+          } else if (typeof member === 'string') {
+            // ObjectId string - need to fetch name (use placeholder for now)
+            contentWriters.push({
+              _id: member,
+              name: 'Team Member' // Placeholder - actual name should be populated
+            });
+          }
+        }
+      });
+      console.log(`Found ${contentWriters.length} content writers from array field`);
+    }
+
+    // Fall back to legacy field if no array field data
+    if (contentWriters.length === 0) {
+      const legacyField = projectAssignedTeam.contentWriter;
+      console.log('Checking legacy contentWriter field:', legacyField);
+
+      if (legacyField) {
+        if (typeof legacyField === 'object' && legacyField !== null) {
+          // Populated object
+          contentWriters.push({
+            _id: legacyField._id?.toString?.() || legacyField._id || String(legacyField),
+            name: legacyField.name || 'Unknown'
+          });
+          console.log('Found 1 content writer from legacy field (object)');
+        } else if (typeof legacyField === 'string') {
+          // ObjectId string
+          contentWriters.push({
+            _id: legacyField,
+            name: 'Team Member'
+          });
+          console.log('Found 1 content writer from legacy field (string)');
+        }
+      }
+    }
+
+    console.log(`getContentWriters returning ${contentWriters.length} writers:`, contentWriters);
+    return contentWriters;
+  };
+
+  // Memoize content writers to avoid recalculating on every render
+  const availableContentWriters = useMemo(() => {
+    return getContentWriters();
+  }, [projectAssignedTeam]);
 
   // Calculate totals
   const totalCreatives = creativePlan.length;
@@ -334,6 +408,7 @@ export default function CreativePlanner({
           screenSizes: row.screenSizes || [],
           assignedRole: row.assignedRole || '',
           assignedTeamMembers: row.assignedTeamMembers || [],
+          contentWriter: row.contentWriter || '', // NEW: Include content writer
           notes: row.notes || '',
           name: row.name || `Creative ${index + 1}`,
           order: index,
@@ -362,7 +437,7 @@ export default function CreativePlanner({
         </div>
         <div>
           <h2 className="text-xl font-bold text-gray-900">Creative Strategy</h2>
-          <p className="text-sm text-gray-500">Define your creatives - team members are auto-assigned based on project setup</p>
+          <p className="text-sm text-gray-500">Define your creatives and assign team members from the project team</p>
         </div>
       </div>
 
@@ -412,8 +487,6 @@ export default function CreativePlanner({
       <div className="space-y-4">
         {creativePlan.map((row, index) => {
           const subTypes = getSubTypesForCreativeType(row.creativeType);
-          // Get ONLY project-assigned members (set by Admin during project creation)
-          const assignedMembers = getProjectAssignedMembers(row.assignedRole);
           const isExpanded = expandedCards[row._id];
 
           return (
@@ -568,7 +641,7 @@ export default function CreativePlanner({
                     <div>
                       <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
                         <Users className="w-4 h-4 text-gray-400" />
-                        Assigned Role
+                        Production Role
                       </label>
                       <select
                         value={row.assignedRole || ''}
@@ -576,50 +649,87 @@ export default function CreativePlanner({
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                       >
                         <option value="">Select role...</option>
-                        {CREATIVE_ROLES.map(role => (
+                        {CREATIVE_ROLES.filter(role => role.key !== 'content_writer').map(role => (
                           <option key={role.key} value={role.key}>{role.label}</option>
                         ))}
                       </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Who creates the visual creative
+                      </p>
                     </div>
 
-                    {/* Team Members - Read-only display of Admin-assigned members */}
+                    {/* Team Members - Dropdown for manual selection */}
                     <div>
                       <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
                         <UserPlus className="w-4 h-4 text-gray-400" />
-                        Assigned Team Member
+                        Team Member
                       </label>
                       {row.assignedRole ? (
                         <div className="space-y-1">
-                          {/* Display assigned members as read-only */}
-                          <div className="flex flex-wrap gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                            {assignedMembers.length > 0 ? (
-                              assignedMembers.map(member => (
-                                <Badge
-                                  key={member._id}
-                                  variant="primary"
-                                  className="text-sm bg-blue-100 text-blue-800 border border-blue-300"
-                                >
-                                  {member.name}
-                                  <span className="ml-1 text-blue-500">★</span>
-                                </Badge>
-                              ))
-                            ) : (
-                              <span className="text-sm text-amber-600 italic">
-                                ⚠️ No team member assigned for this role. Contact Admin to assign.
-                              </span>
-                            )}
-                          </div>
-                          {assignedMembers.length > 0 && (
+                          <select
+                            value={(row.assignedTeamMembers && row.assignedTeamMembers[0]) || ''}
+                            onChange={(e) => updateCreativeRow(row._id, 'assignedTeamMembers', e.target.value ? [e.target.value] : [])}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          >
+                            <option value="">Select team member...</option>
+                            {getProjectAssignedMembers(row.assignedRole).map(member => (
+                              <option key={member._id} value={member._id}>
+                                {member.name}
+                              </option>
+                            ))}
+                          </select>
+                          {getProjectAssignedMembers(row.assignedRole).length === 0 && (
+                            <p className="text-xs text-amber-600 mt-1">
+                              ⚠️ No team members assigned for this role. Contact Admin to assign.
+                            </p>
+                          )}
+                          {getProjectAssignedMembers(row.assignedRole).length > 0 && (
                             <p className="text-xs text-gray-500">
-                              Team member(s) assigned by Admin during project creation
+                              Select from team members assigned to this project
                             </p>
                           )}
                         </div>
                       ) : (
                         <p className="text-sm text-gray-400 italic">
-                          Select a role to see assigned team member
+                          Select a role first to see available team members
                         </p>
                       )}
+                    </div>
+                  </div>
+
+                  {/* Row 4.5: Content Writer */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1">
+                        <FileText className="w-4 h-4 text-gray-400" />
+                        Content Writer
+                      </label>
+                      <select
+                        value={row.contentWriter || ''}
+                        onChange={(e) => updateCreativeRow(row._id, 'contentWriter', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      >
+                        <option value="">Select content writer...</option>
+                        {availableContentWriters.map(writer => (
+                          <option key={writer._id} value={writer._id}>
+                            {writer.name}
+                          </option>
+                        ))}
+                      </select>
+                      {availableContentWriters.length === 0 && (
+                        <p className="text-xs text-amber-600 mt-1">
+                          ⚠️ No content writers assigned to project. Contact Admin.
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-500 mb-1">
+                        &nbsp;
+                      </label>
+                      <p className="text-xs text-gray-500 italic">
+                        The content writer creates the copy/text for this creative.
+                        Select from writers assigned to the project by Admin.
+                      </p>
                     </div>
                   </div>
 

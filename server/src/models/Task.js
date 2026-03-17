@@ -18,9 +18,9 @@ const TASK_STATUSES = [
   // Content creation workflow
   'content_pending',        // Awaiting content creator
   'content_submitted',      // Content submitted for tester review
-  'content_approved',       // Content approved by tester, awaiting marketer review
+  'content_approved',       // LEGACY - Content approved by tester (old flow)
   'content_rejected',       // Content rejected
-  'content_final_approved', // Content approved by marketer, ready for design
+  'content_final_approved', // Content approved by tester, ready for design (NEW FLOW - skip marketer for content)
 
   // Design workflow
   'design_pending',         // Awaiting designer
@@ -127,6 +127,24 @@ const taskSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  // Tester assigned to review this task (from project team)
+  testerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    description: 'The tester assigned to review this task'
+  },
+  // Performance Marketer assigned for final approval
+  marketerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    description: 'The performance marketer assigned for final approval'
+  },
+  // Parent task dependency (e.g., design task depends on content task)
+  parentTaskId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Task',
+    description: 'Parent task that must be completed before this task can start'
   },
 
   // Status pipeline
@@ -383,7 +401,8 @@ taskSchema.methods.canBeReviewedByTester = function() {
 // Method to check if task can be approved by marketer
 taskSchema.methods.canBeApprovedByMarketer = function() {
   const marketerApprovableStatuses = [
-    'content_approved',    // Content approved by tester, awaiting marketer
+    // Note: content_approved is NOT included - content goes directly to design after tester approval
+    // Marketer only approves final design/video, not content
     'design_approved',     // Design approved by tester, awaiting marketer (for creative tasks)
     'development_approved'  // Development approved by tester, awaiting marketer (for landing pages)
   ];
@@ -392,16 +411,15 @@ taskSchema.methods.canBeApprovedByMarketer = function() {
 
 // Method to get next status after approval
 taskSchema.methods.getNextStatus = function(currentStatus, action, taskType) {
-  // Content creation workflow
+  // Content creation workflow - NEW FLOW: Tester approves content → Design starts (skip marketer)
   if (currentStatus === 'content_pending' && action === 'submit') return 'content_submitted';
-  if (currentStatus === 'content_submitted' && action === 'approve_tester') return 'content_approved';
+  if (currentStatus === 'content_submitted' && action === 'approve_tester') return 'content_final_approved'; // Direct to design, skip marketer
   if (currentStatus === 'content_submitted' && action === 'reject') return 'content_rejected';
   if (currentStatus === 'content_rejected' && action === 'resubmit') return 'content_submitted';
-  if (currentStatus === 'content_approved' && action === 'approve_marketer') return 'content_final_approved';
-  if (currentStatus === 'content_approved' && action === 'reject') return 'content_rejected';
   if (currentStatus === 'content_final_approved' && action === 'start_design') return 'design_pending';
 
   // Design workflow (for graphic design/video tasks)
+  // Marketer only reviews final design, not content
   if (currentStatus === 'design_pending' && action === 'submit') return 'design_submitted';
   if (currentStatus === 'design_submitted' && action === 'approve_tester') return 'design_approved';
   if (currentStatus === 'design_submitted' && action === 'reject') return 'design_rejected';

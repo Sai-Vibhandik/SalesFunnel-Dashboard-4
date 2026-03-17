@@ -230,16 +230,21 @@ const creativePlanItemSchema = new mongoose.Schema({
   screenSizes: [{
     type: String
   }],
-  // Assigned role for this creative
+  // Assigned role for this creative (graphic_designer or video_editor)
   assignedRole: {
     type: String,
     enum: CREATIVE_ROLES
   },
-  // Assigned team members (user IDs)
+  // Assigned team members (user IDs) - auto-populated from project team based on role
   assignedTeamMembers: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
+  // Content Writer assigned to this creative (from project's content writers)
+  contentWriter: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   // Additional notes
   notes: {
     type: String,

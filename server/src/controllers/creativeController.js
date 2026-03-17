@@ -51,7 +51,9 @@ exports.getCreativeStrategy = async (req, res, next) => {
 
     let creativeStrategy = await CreativeStrategy.findOne({ projectId })
       .populate('stages.creatives.assignedDesigner', 'name email')
-      .populate('stages.creatives.assignedContentWriter', 'name email');
+      .populate('stages.creatives.assignedContentWriter', 'name email')
+      .populate('creativePlan.assignedTeamMembers', 'name email')
+      .populate('creativePlan.contentWriter', 'name email');
 
     if (!creativeStrategy) {
       // Create default creative strategy
@@ -128,6 +130,7 @@ exports.upsertCreativeStrategy = async (req, res, next) => {
           objective: item.objective,
           assignedRole: item.assignedRole,
           assignedTeamMembers: item.assignedTeamMembers,
+          contentWriter: item.contentWriter,
           platforms: item.platforms,
           screenSizes: item.screenSizes,
           notes: item.notes?.substring(0, 50) + '...'
@@ -177,6 +180,7 @@ exports.upsertCreativeStrategy = async (req, res, next) => {
       subType: item.subType,
       assignedRole: item.assignedRole,
       assignedTeamMembers: item.assignedTeamMembers,
+      contentWriter: item.contentWriter,
       platforms: item.platforms,
       screenSizes: item.screenSizes
     })));
@@ -218,6 +222,7 @@ exports.upsertCreativeStrategy = async (req, res, next) => {
             objective: item.objective,
             assignedRole: item.assignedRole,
             assignedTeamMembers: item.assignedTeamMembers,
+            contentWriter: item.contentWriter,
             platforms: item.platforms,
             screenSizes: item.screenSizes
           });

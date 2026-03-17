@@ -10,6 +10,7 @@ import { extractData } from '@/utils/apiResponse';
 // Role configuration - keys match the backend User role values (underscore)
 // label is the display name
 // assignedTeamField is the corresponding field name in Project.assignedTeam (plural for arrays)
+// singleSelect indicates if only one selection is allowed for this role
 const ROLE_CONFIG = {
   performance_marketer: {
     label: 'Performance Marketer',
@@ -18,6 +19,7 @@ const ROLE_CONFIG = {
     color: 'bg-blue-100 text-blue-700',
     borderColor: 'border-blue-200',
     bgColor: 'rgba(59, 130, 246, 0.1)',
+    singleSelect: true, // Only ONE performance marketer per project
   },
   content_writer: {
     label: 'Content Writer',
@@ -66,6 +68,7 @@ const ROLE_CONFIG = {
     color: 'bg-orange-100 text-orange-700',
     borderColor: 'border-orange-200',
     bgColor: 'rgba(249, 115, 22, 0.1)',
+    singleSelect: true, // Only ONE tester per project
   },
 };
 
@@ -144,12 +147,22 @@ export default function TeamAssignmentPage() {
     }
   };
 
-  // Toggle member selection (multi-select)
+  // Toggle member selection (multi-select for most roles, single-select for performance_marketer)
   const toggleMember = (role, memberId) => {
     setSelectedTeam(prev => {
       const currentMembers = prev[role] || [];
       const isSelected = currentMembers.includes(memberId);
+      const roleConfig = ROLE_CONFIG[role];
 
+      // Performance Marketer is single-select - only one allowed per project
+      if (roleConfig?.singleSelect) {
+        return {
+          ...prev,
+          [role]: isSelected ? [] : [memberId] // Replace with new selection or clear
+        };
+      }
+
+      // Other roles are multi-select
       return {
         ...prev,
         [role]: isSelected
@@ -179,9 +192,15 @@ export default function TeamAssignmentPage() {
 
       Object.entries(ROLE_CONFIG).forEach(([roleKey, config]) => {
         // Ensure all IDs are strings
-        const memberIds = (selectedTeam[roleKey] || []).map(id =>
+        let memberIds = (selectedTeam[roleKey] || []).map(id =>
           typeof id === 'object' && id !== null ? (id._id?.toString() || id.toString()) : String(id)
         );
+
+        // Performance Marketer is single-select - ensure only one
+        if (config.singleSelect && memberIds.length > 1) {
+          memberIds = [memberIds[0]];
+        }
+
         assignedTeamData[config.assignedTeamField] = memberIds;
         // Also set legacy field for backward compatibility
         assignedTeamData[config.legacyField] = memberIds[0] || null;
@@ -273,7 +292,7 @@ export default function TeamAssignmentPage() {
             <h3 className="text-lg font-semibold text-gray-900">Team Assignment</h3>
           </div>
           <p className="text-sm text-gray-500 mt-1">
-            Select multiple team members for each role. Click on a member to toggle selection.
+            Assign team members to project roles. Performance Marketer is limited to one person per project.
           </p>
         </CardHeader>
         <CardBody className="p-6">
@@ -283,7 +302,11 @@ export default function TeamAssignmentPage() {
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-medium text-gray-700">
                     {config.label}
-                    {(selectedTeam[roleKey] || []).length > 0 && (
+                    {config.singleSelect ? (
+                      <span className="ml-2 text-xs text-blue-600 font-normal">
+                        (One per project)
+                      </span>
+                    ) : (selectedTeam[roleKey] || []).length > 0 && (
                       <span className="ml-2 text-xs text-gray-500">
                         ({selectedTeam[roleKey].length} selected)
                       </span>

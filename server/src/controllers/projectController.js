@@ -476,25 +476,40 @@ exports.assignTeam = async (req, res, next) => {
       });
     }
 
+    // Ensure performanceMarketers has at most one member
+    let performanceMarketersArray = performanceMarketers || [];
+    if (performanceMarketersArray.length > 1) {
+      console.log('Warning: Multiple performance marketers provided, keeping only the first one');
+      performanceMarketersArray = [performanceMarketersArray[0]];
+    }
+
+    // Ensure testers has at most one member
+    let testersArray = testers || [];
+    if (testersArray.length > 1) {
+      console.log('Warning: Multiple testers provided, keeping only the first one');
+      testersArray = [testersArray[0]];
+    }
+
     // Update assigned team - support both new array fields and legacy single fields
     project.assignedTeam = {
       // New array fields (plural names)
-      performanceMarketers: performanceMarketers || [],
+      // Performance Marketer is limited to ONE per project
+      performanceMarketers: performanceMarketersArray,
       contentWriters: contentWriters || [],
       uiUxDesigners: uiUxDesigners || [],
       graphicDesigners: graphicDesigners || [],
       videoEditors: videoEditors || [],
       developers: developers || [],
-      testers: testers || [],
+      testers: testersArray,
       // Legacy single fields (for backward compatibility)
-      performanceMarketer: performanceMarketer || (performanceMarketers && performanceMarketers[0]) || null,
+      performanceMarketer: performanceMarketer || (performanceMarketersArray[0]) || null,
       contentCreator: req.body.contentCreator || null,
       contentWriter: req.body.contentWriter || (contentWriters && contentWriters[0]) || null,
       uiUxDesigner: uiUxDesigner || (uiUxDesigners && uiUxDesigners[0]) || null,
       graphicDesigner: graphicDesigner || (graphicDesigners && graphicDesigners[0]) || null,
       videoEditor: req.body.videoEditor || (videoEditors && videoEditors[0]) || null,
       developer: developer || (developers && developers[0]) || null,
-      tester: tester || (testers && testers[0]) || null
+      tester: tester || (testersArray[0]) || null
     };
 
     await project.save();

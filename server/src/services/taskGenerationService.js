@@ -484,11 +484,13 @@ function generateAdTypeTasks(adType, projectId, creativeStrategyId, strategyCont
         cta: creatives.cta,
         messagingAngle: creatives.messagingAngle,
         notes: creatives.notes,
-        completedBy
+        completedBy,
+        testerId: tester,
+        marketerId: marketer
       });
       carouselTask.status = contentWriter ? 'design_pending' : 'todo';
       if (contentWriter) {
-        carouselTask.description = 'This task will become active after content is approved.';
+        carouselTask.description = 'This task will become active after content is approved by tester and marketer.';
       }
       tasks.push(carouselTask);
     }
@@ -499,7 +501,10 @@ function generateAdTypeTasks(adType, projectId, creativeStrategyId, strategyCont
 
 /**
  * Generate tasks for landing page
- * Landing Page Workflow: UI_UX_DESIGNER → TESTER → PERFORMANCE_MARKETER → DEVELOPER → TESTER → PERFORMANCE_MARKETER
+ * Landing Page Workflow:
+ * UI_UX_DESIGNER (design_pending) → TESTER reviews (design_submitted) → PERFORMANCE_MARKETER approves (design_approved)
+ * → DEVELOPER (development_pending) → TESTER reviews (development_submitted) → PERFORMANCE_MARKETER approves (development_approved)
+ * → Final approval (final_approved)
  */
 function generateLandingPageTasks(landingPage, projectId, creativeStrategyId, strategyContext, project, completedBy, contextLink, contextPdfUrl) {
   const tasks = [];
@@ -508,7 +513,9 @@ function generateLandingPageTasks(landingPage, projectId, creativeStrategyId, st
   const getFirstMember = (role) => {
     const roleFieldMap = {
       'ui_ux_designer': { arrayField: 'uiUxDesigners', legacyField: 'uiUxDesigner' },
-      'developer': { arrayField: 'developers', legacyField: 'developer' }
+      'developer': { arrayField: 'developers', legacyField: 'developer' },
+      'tester': { arrayField: 'testers', legacyField: 'tester' },
+      'performance_marketer': { arrayField: 'performanceMarketers', legacyField: 'performanceMarketer' }
     };
 
     const fieldConfig = roleFieldMap[role];
@@ -529,6 +536,10 @@ function generateLandingPageTasks(landingPage, projectId, creativeStrategyId, st
     return null;
   };
 
+  // Get tester and marketer from project team
+  const testerId = getFirstMember('tester');
+  const marketerId = getFirstMember('performance_marketer');
+
   // Use landing-page-specific assignments if available, otherwise fall back to project-level assignments
   let uiuxDesigner = landingPage.assignedDesigner || null;
   let developer = landingPage.assignedDeveloper || null;
@@ -544,9 +555,11 @@ function generateLandingPageTasks(landingPage, projectId, creativeStrategyId, st
   console.log(`\n=== Landing Page: ${landingPage.name || 'Unnamed'} ===`);
   console.log(`Assigned Designer: ${uiuxDesigner || 'Not assigned'}`);
   console.log(`Assigned Developer: ${developer || 'Not assigned'}`);
+  console.log(`Tester: ${testerId || 'Not assigned'}`);
+  console.log(`Marketer: ${marketerId || 'Not assigned'}`);
 
   // Landing page design task (starts the workflow)
-  // Status flow: design_pending → design_submitted → design_approved → development_pending → development_submitted → development_approved → final_approved
+  // Flow: design_pending → design_submitted → (Tester reviews) → design_approved → (Marketer reviews) → development_pending
   const designTask = createTask({
     projectId,
     landingPageId: landingPage._id,
@@ -567,12 +580,15 @@ function generateLandingPageTasks(landingPage, projectId, creativeStrategyId, st
     hook: landingPage.hook,
     messagingAngle: landingPage.angle,
     platform: landingPage.platform,
-    completedBy
+    completedBy,
+    testerId: testerId, // Tester for design review
+    marketerId: marketerId // Marketer for design approval
   });
   designTask.status = 'design_pending'; // Ready for UI/UX Designer to start
   tasks.push(designTask);
 
   // Landing page development task (will be activated after design is approved by marketer)
+  // Flow: development_pending → development_submitted → (Tester reviews) → development_approved → (Marketer approves) → final_approved
   const devTask = createTask({
     projectId,
     landingPageId: landingPage._id,
@@ -586,10 +602,13 @@ function generateLandingPageTasks(landingPage, projectId, creativeStrategyId, st
     contextLink,
     contextPdfUrl,
     landingPageType: landingPage.type, // 'type' in LandingPage model
-    completedBy
+    completedBy,
+    testerId: testerId, // Tester for development review
+    marketerId: marketerId, // Marketer for final approval
+    parentTaskId: null // Will be linked to design task after saving
   });
   devTask.status = 'development_pending'; // Waiting for design to be approved
-  devTask.description = 'This task will become active after the design is approved by the marketer.';
+  devTask.description = 'This task will become active after the design is approved by the tester and marketer.';
   tasks.push(devTask);
 
   return tasks;
@@ -611,7 +630,8 @@ function generateCreativePlanTasks(creativePlan, projectId, creativeStrategyId, 
       'video_editor': { arrayField: 'videoEditors', legacyField: 'videoEditor' },
       'ui_ux_designer': { arrayField: 'uiUxDesigners', legacyField: 'uiUxDesigner' },
       'developer': { arrayField: 'developers', legacyField: 'developer' },
-      'tester': { arrayField: 'testers', legacyField: 'tester' }
+      'tester': { arrayField: 'testers', legacyField: 'tester' },
+      'performance_marketer': { arrayField: 'performanceMarketers', legacyField: 'performanceMarketer' }
     };
 
     const fieldConfig = roleFieldMap[role];
@@ -636,11 +656,25 @@ function generateCreativePlanTasks(creativePlan, projectId, creativeStrategyId, 
   const defaultContentWriters = getTeamMembersForRole('content_writer');
   const defaultGraphicDesigners = getTeamMembersForRole('graphic_designer');
   const defaultVideoEditors = getTeamMembersForRole('video_editor');
+  const defaultTesters = getTeamMembersForRole('tester');
+  const defaultMarketer = getTeamMembersForRole('performance_marketer');
+
+  // Get tester ID (single tester per project)
+  const testerId = defaultTesters && defaultTesters.length > 0
+    ? (defaultTesters[0]._id || defaultTesters[0])
+    : null;
+
+  // Get performance marketer ID (single marketer per project)
+  const marketerId = defaultMarketer && defaultMarketer.length > 0
+    ? (defaultMarketer[0]._id || defaultMarketer[0])
+    : null;
 
   console.log('Team assignments for task generation:', {
     contentWriters: defaultContentWriters?.map(m => m?._id || m),
     graphicDesigners: defaultGraphicDesigners?.map(m => m?._id || m),
-    videoEditors: defaultVideoEditors?.map(m => m?._id || m)
+    videoEditors: defaultVideoEditors?.map(m => m?._id || m),
+    tester: testerId,
+    marketer: marketerId
   });
 
   // Creative type to task type mapping - determines which design role receives the task
@@ -757,15 +791,22 @@ function generateCreativePlanTasks(creativePlan, projectId, creativeStrategyId, 
       }
     }
 
-    // For content task - always use content_writer from project assignment
-    if (defaultContentWriters && defaultContentWriters.length > 0) {
+    // For content task - use contentWriter from creative plan if specified, otherwise use project-level content writers
+    const creativeContentWriter = planItem.contentWriter;
+    if (creativeContentWriter) {
+      // Use the specific content writer assigned to this creative
+      contentAssignedTo = creativeContentWriter._id || creativeContentWriter;
+      console.log(`Content task assigned to creative's contentWriter: ${contentAssignedTo}`);
+    } else if (defaultContentWriters && defaultContentWriters.length > 0) {
+      // Fall back to project-level content writers
       contentAssignedTo = defaultContentWriters[0]._id || defaultContentWriters[0];
-      console.log(`Content task assigned to: ${contentAssignedTo}`);
+      console.log(`Content task assigned to project's default contentWriter: ${contentAssignedTo}`);
     } else {
-      console.log(`No default content_writer available`);
+      console.log(`No content_writer available`);
     }
 
     // Content writing task (first in workflow) - assigned to content_writer
+    // Flow: content_pending → content_submitted → (Tester reviews) → content_approved → (Marketer approves) → design_pending
     if (contentAssignedTo) {
       const contentTask = createTask({
         projectId,
@@ -786,21 +827,31 @@ function generateCreativePlanTasks(creativePlan, projectId, creativeStrategyId, 
         creativeType: planItem.subType || planItem.adType || taskTitle,
         creativeCategory: creativeType,
         objective: planItem.objective || '',
-        completedBy
+        completedBy,
+        testerId: testerId, // Tester for content review
+        marketerId: marketerId // Marketer for content approval
       });
       contentTask.status = 'content_pending';
       tasks.push(contentTask);
+      console.log(`Created content task assigned to: ${contentAssignedTo}, tester: ${testerId}, marketer: ${marketerId}`);
     }
 
     // Design/Edit task - assigned based on creative type or specified role
     // For VIDEO: video_editor, For IMAGE/CAROUSEL: graphic_designer
+    // Flow: design_pending → (wait for content_final_approved) → design_submitted → (Tester reviews) → design_approved → (Marketer approves) → final_approved
     const designRoleForTask = creativeType === 'VIDEO' ? 'video_editor' : 'graphic_designer';
+
+    // Get the content task to link as parent (design depends on content being approved)
+    const lastContentTask = tasks.length > 0 && tasks[tasks.length - 1].taskType === 'content_creation'
+      ? tasks[tasks.length - 1]
+      : null;
 
     const designTask = createTask({
       projectId,
       creativeStrategyId,
       taskType: taskConfig.designTask,
       assetType: taskConfig.assetType,
+      creativeOutputType: taskConfig.creativeOutputType,
       taskTitle: taskTitle,
       assignedRole: designRoleForTask,
       assignedTo: designAssignedTo,
@@ -814,13 +865,18 @@ function generateCreativePlanTasks(creativePlan, projectId, creativeStrategyId, 
       creativeType: planItem.subType || planItem.adType || taskTitle,
       creativeCategory: creativeType,
       objective: planItem.objective || '',
-      completedBy
+      completedBy,
+      testerId: testerId, // Tester for design/video review
+      marketerId: marketerId // Marketer for final approval
     });
     designTask.status = 'design_pending';
     if (contentAssignedTo) {
-      designTask.description = 'This task will become active after content is approved.';
+      designTask.description = 'This task will become active after content is approved by tester and marketer.';
     }
+    // Note: parentTaskId will be set after tasks are saved, to link design to content
     tasks.push(designTask);
+
+    console.log(`Created design task assigned to: ${designAssignedTo}, tester: ${testerId}, marketer: ${marketerId}`);
   }
 
   console.log(`Generated ${tasks.length} tasks from creative plan with ${creativePlan.length} items`);
@@ -858,7 +914,10 @@ function createTask({
   objective = '',
   landingPageType = '',
   leadCapture = null,
-  completedBy
+  completedBy,
+  testerId = null,
+  marketerId = null,
+  parentTaskId = null
 }) {
   // Generate AI prompt based on strategy context
   const aiPrompt = generateAIPrompt(taskType, assetType, {
@@ -939,6 +998,21 @@ function createTask({
 
   if (creativeOutputType) {
     task.creativeOutputType = creativeOutputType;
+  }
+
+  // Assign tester for review workflow
+  if (testerId) {
+    task.testerId = testerId;
+  }
+
+  // Assign performance marketer for final approval
+  if (marketerId) {
+    task.marketerId = marketerId;
+  }
+
+  // Set parent task dependency
+  if (parentTaskId) {
+    task.parentTaskId = parentTaskId;
   }
 
   return task;
@@ -1115,6 +1189,9 @@ async function getTasksByProject(projectId, filters = {}) {
     .populate('reviewedBy', 'name email')
     .populate('testerReviewedBy', 'name email')
     .populate('marketerApprovedBy', 'name email')
+    .populate('testerId', 'name email role')
+    .populate('marketerId', 'name email role')
+    .populate('parentTaskId', 'taskTitle status')
     .sort({ createdAt: -1 });
 
   return tasks;
