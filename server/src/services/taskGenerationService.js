@@ -1413,20 +1413,31 @@ async function linkContentToDesignTasks(savedTasks, projectId) {
         designTask.parentTaskId = contentTask._id;
         await designTask.save();
         linkedDesignTaskIds.add(designTask._id.toString());
-        console.log(`  Linked ${designTaskType} task ${designTask._id} to content task ${contentTask._id}`);
+        console.log(`  ✓ Linked ${designTaskType} task ${designTask._id} to content task ${contentTask._id}`);
       } else {
-        console.log(`  No matching ${designTaskType} task found for content task ${contentTask._id}`);
+        console.log(`  ⚠ No matching ${designTaskType} task found for content task ${contentTask._id}`);
         console.log(`  Available unlinked design tasks:`, designTasks.filter(t => t.taskType === designTaskType && !linkedDesignTaskIds.has(t._id.toString())).map(t => ({
           _id: t._id,
+          taskType: t.taskType,
           creativeOutputType: t.creativeOutputType,
           adTypeKey: t.adTypeKey,
           creativeType: t.strategyContext?.creativeType,
-          creativeStrategyId: t.creativeStrategyId
+          creativeStrategyId: t.creativeStrategyId,
+          parentTaskId: t.parentTaskId
         })));
+        console.log(`  Content task details:`, {
+          _id: contentTask._id,
+          taskType: contentTask.taskType,
+          creativeOutputType: contentTask.creativeOutputType,
+          adTypeKey: contentTask.adTypeKey,
+          creativeType: contentTask.strategyContext?.creativeType,
+          creativeStrategyId: contentTask.creativeStrategyId
+        });
       }
     }
 
     console.log('Finished linking content to design tasks');
+    console.log(`Summary: ${linkedDesignTaskIds.size} design tasks linked to content tasks`);
   } catch (error) {
     console.error('Error linking content to design tasks:', error);
     // Don't throw - this is not critical, tasks can still work

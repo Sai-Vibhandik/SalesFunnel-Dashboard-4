@@ -868,15 +868,18 @@ export default function TaskDetailPage() {
           )}
 
           {/* Approved Content - For Designers/Editors working on creative tasks */}
-          {['graphic_design', 'video_editing'].includes(task.taskType) && ['design_pending', 'design_submitted', 'design_rejected', 'design_approved'].includes(task.status) && (task.contentLink || task.contentFile?.path || task.contentNotes) && (
+          {/* Show content reference for graphic_design and video_editing tasks that have content, regardless of status */}
+          {['graphic_design', 'video_editing'].includes(task.taskType) && (task.contentLink || task.contentFile?.path || task.contentNotes || task.contentOutput?.headline || task.contentOutput?.bodyText || task.contentOutput?.cta || task.contentOutput?.script) && (
             <Card>
               <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50">
                 <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                   <FileText className="w-5 h-5 text-green-600" />
-                  Approved Content Reference
+                  {task.taskType === 'video_editing' ? 'Approved Script & Content Reference' : 'Approved Content Reference'}
                 </h2>
                 <p className="text-sm text-gray-500 mt-1">
-                  Content approved by tester - use this for your design
+                  {task.taskType === 'video_editing'
+                    ? 'Script and content approved by tester - use this for your video editing'
+                    : 'Content approved by tester - use this for your design'}
                 </p>
               </CardHeader>
               <CardBody className="p-6">
